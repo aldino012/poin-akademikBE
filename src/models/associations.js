@@ -1,6 +1,6 @@
 import Mahasiswa from "./mahasiswaModel.js";
 import User from "./userModel.js";
-import MasterPoin from "./masterPoinModel.js";
+import MasterPoin from "./masterpoinModel.js";
 import KlaimKegiatan from "./klaimKegiatanModel.js";
 import CategoryKegiatan from "./categoryKegiatanModel.js";
 
