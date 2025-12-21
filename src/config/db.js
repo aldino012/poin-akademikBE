@@ -1,27 +1,40 @@
-import dotenv from "dotenv";
 import { Sequelize } from "sequelize";
-
-dotenv.config();
 
 let sequelize;
 
+/**
+ * =========================
+ * PRODUCTION (RAILWAY)
+ * =========================
+ * Railway SUDAH inject env sendiri:
+ * MYSQLHOST, MYSQLUSER, MYSQLPASSWORD, MYSQLDATABASE, MYSQLPORT
+ * ❌ JANGAN pakai dotenv di sini
+ */
 if (process.env.NODE_ENV === "production") {
-  // 🌐 Railway MySQL
   sequelize = new Sequelize(
     process.env.MYSQLDATABASE,
     process.env.MYSQLUSER,
     process.env.MYSQLPASSWORD,
     {
       host: process.env.MYSQLHOST,
-      port: process.env.MYSQLPORT,
+      port: process.env.MYSQLPORT || 3306,
       dialect: "mysql",
       logging: false,
     }
   );
 
   console.log("🚀 Running with Railway MySQL");
-} else {
-  // 💻 Lokal (XAMPP / localhost)
+}
+
+/**
+ * =========================
+ * LOCAL (XAMPP / localhost)
+ * =========================
+ */
+else {
+  const dotenv = await import("dotenv");
+  dotenv.default.config();
+
   sequelize = new Sequelize(
     process.env.DB_NAME,
     process.env.DB_USER,
