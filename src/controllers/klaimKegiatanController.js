@@ -1,7 +1,7 @@
 // src/controllers/klaimKegiatanController.js
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import Mahasiswa from "../models/mahasiswaModel.js";
-import MasterPoin from "../models/masterPoinModel.js";
+import MasterPoin from "../models/masterpoinModel.js";
 
 import {
   uploadToDrive,
