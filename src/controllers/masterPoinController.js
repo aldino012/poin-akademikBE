@@ -1,4 +1,4 @@
-import MasterPoin from "../models/masterPoinModel.js";
+import MasterPoin from "../models/masterpoinModel.js";
 import xlsx from "xlsx";
 import fs from "fs";
 
