@@ -1,0 +1,10 @@
+node_modules
+.env
+*.log
+
+# Google Drive Service Account (REAL KEY)
+src/config/gdrive-service-account.json
+
+# ignore semua service account
+**/*service-account*.json
+
