@@ -3,38 +3,38 @@ import { Sequelize } from "sequelize";
 
 dotenv.config();
 
-// Cek apakah Railway menyediakan DATABASE_URL (biasanya PostgreSQL/MySQL plugin)
-const isRailway = !!process.env.DATABASE_URL;
-
 let sequelize;
 
-if (isRailway) {
-  // 🌐 Mode Railway (pakai database bawaan Railway)
-  sequelize = new Sequelize(process.env.DATABASE_URL, {
-    dialect: process.env.DB_DIALECT || "mysql",
-    dialectOptions: {
-      ssl: {
-        require: true,
-        rejectUnauthorized: false,
-      },
-    },
-    logging: false,
-  });
-  console.log("🚀 Running with Railway database");
+if (process.env.NODE_ENV === "production") {
+  // 🌐 Railway MySQL
+  sequelize = new Sequelize(
+    process.env.MYSQLDATABASE,
+    process.env.MYSQLUSER,
+    process.env.MYSQLPASSWORD,
+    {
+      host: process.env.MYSQLHOST,
+      port: process.env.MYSQLPORT,
+      dialect: "mysql",
+      logging: false,
+    }
+  );
+
+  console.log("🚀 Running with Railway MySQL");
 } else {
-  // 💻 Mode lokal (pakai XAMPP / localhost)
+  // 💻 Lokal (XAMPP / localhost)
   sequelize = new Sequelize(
     process.env.DB_NAME,
     process.env.DB_USER,
     process.env.DB_PASS,
     {
       host: process.env.DB_HOST,
-      dialect: process.env.DB_DIALECT,
       port: process.env.DB_PORT || 3306,
+      dialect: "mysql",
       logging: false,
     }
   );
-  console.log("💻 Running with local database");
+
+  console.log("💻 Running with local MySQL");
 }
 
 export default sequelize;
