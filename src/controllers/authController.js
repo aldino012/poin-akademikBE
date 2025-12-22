@@ -7,9 +7,9 @@ import { Op } from "sequelize";
 const JWT_SECRET = process.env.JWT_SECRET || "please-change-this";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
-// =========================
-// LOGIN (NIM / NIP)
-// =========================
+/* =================================================
+   LOGIN (NIM / NIP)
+================================================= */
 export const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
@@ -37,11 +37,16 @@ export const login = async (req, res) => {
     }
 
     let mahasiswaId = null;
+
     if (user.role === "mahasiswa") {
-      mahasiswaId =
-        user.Mahasiswa?.id_mhs ||
-        (await Mahasiswa.findOne({ where: { nim: user.nim } }))?.id_mhs ||
-        null;
+      if (user.Mahasiswa?.id_mhs) {
+        mahasiswaId = user.Mahasiswa.id_mhs;
+      } else {
+        const mhs = await Mahasiswa.findOne({
+          where: { nim: user.nim },
+        });
+        mahasiswaId = mhs ? mhs.id_mhs : null;
+      }
     }
 
     const token = jwt.sign(
@@ -56,16 +61,17 @@ export const login = async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    // 🔥 COOKIE CONFIG WAJIB UNTUK VERCEL
+    /* =================================================
+       COOKIE (WAJIB BEGINI UNTUK VERCEL)
+    ================================================= */
     res.cookie("token", token, {
       httpOnly: true,
-      secure: true,            // ⬅ WAJIB HTTPS
-      sameSite: "none",        // ⬅ WAJIB CROSS-SITE
-      maxAge: 1000 * 60 * 60 * 24 * 7,
-      path: "/",
+      secure: true,        // ⬅ WAJIB (https)
+      sameSite: "none",    // ⬅ WAJIB (cross-site)
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
     });
 
-    return res.status(200).json({
+    return res.json({
       message: "Login berhasil.",
       role: user.role,
       user: {
@@ -84,31 +90,36 @@ export const login = async (req, res) => {
   }
 };
 
-// =========================
-// GET PROFILE
-// =========================
+/* =================================================
+   GET PROFILE
+================================================= */
 export const getProfile = async (req, res) => {
   try {
     const { role, nim, nip } = req.user;
 
-    const data =
-      role === "mahasiswa"
-        ? await Mahasiswa.findOne({ where: { nim } })
-        : await User.findOne({ where: { nip } });
+    let data;
+    if (role === "mahasiswa") {
+      data = await Mahasiswa.findOne({ where: { nim } });
+    } else {
+      data = await User.findOne({ where: { nip } });
+    }
 
     if (!data) {
       return res.status(404).json({ message: "Data tidak ditemukan." });
     }
 
-    return res.json({ message: "Profile ditemukan.", data });
+    return res.json({
+      message: "Profile ditemukan.",
+      data,
+    });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: "Gagal mengambil profile." });
   }
 };
 
-// =========================
-// CHANGE PASSWORD
-// =========================
+/* =================================================
+   CHANGE PASSWORD
+================================================= */
 export const changePassword = async (req, res) => {
   try {
     const { id } = req.user;
@@ -135,23 +146,22 @@ export const changePassword = async (req, res) => {
 
     return res.json({ message: "Password berhasil diubah." });
   } catch (err) {
-    return res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: "Gagal mengganti password." });
   }
 };
 
-// =========================
-// LOGOUT
-// =========================
+/* =================================================
+   LOGOUT
+================================================= */
 export const logout = async (req, res) => {
   try {
     res.clearCookie("token", {
       httpOnly: true,
       secure: true,
       sameSite: "none",
-      path: "/",
     });
 
-    return res.status(200).json({ message: "Logout berhasil." });
+    return res.json({ message: "Logout berhasil." });
   } catch (err) {
     console.error("Logout error:", err);
     return res.status(500).json({ message: "Gagal logout." });
