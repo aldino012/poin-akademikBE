@@ -26,11 +26,9 @@ const PORT = Number(process.env.PORT) || 5050;
 app.set("trust proxy", 1);
 
 // =================================================
-// CORS (PRODUCTION + VERCEL PREVIEW)
+// CORS (FINAL – NO THROW ERROR)
 // =================================================
 const FRONTEND_PROD = "https://poin-akademik-fe.vercel.app";
-
-// ⚠️ regex preview vercel (SESUIKAN DENGAN PROJECT KAMU)
 const vercelPreviewRegex =
   /^https:\/\/poin-akademik-[a-z0-9-]+-aldinos-projects-ea7e2f5e\.vercel\.app$/;
 
@@ -40,27 +38,23 @@ app.use(
       // allow server-to-server / curl
       if (!origin) return callback(null, true);
 
-      // production FE
       if (origin === FRONTEND_PROD) {
-        return callback(null, true);
+        return callback(null, origin);
       }
 
-      // vercel preview FE
       if (vercelPreviewRegex.test(origin)) {
-        return callback(null, true);
+        return callback(null, origin);
       }
 
       console.warn("❌ CORS blocked origin:", origin);
-      return callback(new Error("Not allowed by CORS"));
+      return callback(null, false); // ⬅️ PENTING (JANGAN THROW ERROR)
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
+    optionsSuccessStatus: 204, // 🔥 penting untuk mobile & safari
   })
 );
-
-// ❌ JANGAN pakai app.options("*", …)
-// Express 5 + Node 20 bisa bermasalah
 
 // =================================================
 // MIDDLEWARE UTAMA
@@ -96,7 +90,7 @@ app.use("/api/masterpoin", masterPoinRoutes);
 app.use("/api/klaim", klaimKegiatanRoutes);
 
 // =================================================
-// STATIC FILES (UPLOADS)
+// STATIC FILES
 // =================================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
