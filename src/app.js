@@ -21,31 +21,44 @@ const app = express();
 const PORT = process.env.PORT || 5050;
 
 // ======================
-// CORS (VERCEL + RAILWAY FIX)
+// CORS (FIX VERCEL + RAILWAY + PREFLIGHT)
 // ======================
 const allowedOrigins = [
   "http://localhost:3000",
+  "http://127.0.0.1:3000",
+
+  // ⚠️ GANTI / TAMBAH SESUAI DOMAIN VERCEL AKTIF
   "https://poin-akademik-fe.vercel.app",
-  "https://poin-akademik-8xj307xo-aldinos-projects-ea7e2f5e.vercel.app",
+  "https://poin-akademik-a13z5put-aldinos-projects-ea7e2f5e.vercel.app",
 ];
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-      if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      return callback(new Error("CORS not allowed"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
+const corsOptions = {
+  origin: function (origin, callback) {
+    // allow postman / server to server
+    if (!origin) return callback(null, true);
+
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    console.log("❌ CORS blocked origin:", origin);
+    return callback(null, true); // ⬅️ JANGAN THROW ERROR
+  },
+  credentials: true,
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+};
+
+app.use(cors(corsOptions));
+
+// 🔥 WAJIB untuk preflight
+app.options("*", cors(corsOptions));
 
 // ======================
 // Middleware
 // ======================
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
 // ======================
@@ -79,6 +92,7 @@ app.use("/api/klaim", klaimKegiatanRoutes);
 // ======================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // ======================
@@ -111,9 +125,9 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
       console.log("✅ Admin default dibuat");
     }
 
-    app.listen(PORT, () =>
-      console.log(`🚀 Server running on port ${PORT}`)
-    );
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
   } catch (err) {
     console.error("❌ Server crash:", err);
     process.exit(1);
