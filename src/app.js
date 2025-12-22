@@ -20,17 +20,39 @@ const app = express();
 const PORT = process.env.PORT || 5050;
 
 /* ======================
-   CORS (DEV + PROD)
+   CORS (DEV + PROD + VERCEL)
 ====================== */
+const allowedOrigins = [
+  "http://localhost:3000",
+  "https://poin-akademikfe-production.up.railway.app",
+];
+
 app.use(
   cors({
-    origin: [
-      "http://localhost:3000",
-      "https://poin-akademikfe-production.up.railway.app", // ganti jika ada FE
-    ],
+    origin: (origin, callback) => {
+      // allow server-to-server / postman / curl
+      if (!origin) return callback(null, true);
+
+      // allow explicit origins
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // 🔥 allow ALL vercel preview & production domains
+      if (origin.endsWith(".vercel.app")) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("CORS not allowed"), false);
+    },
     credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
+
+// 🔥 WAJIB: handle preflight
+app.options("*", cors());
 
 /* ======================
    Middleware
@@ -39,7 +61,7 @@ app.use(express.json());
 app.use(cookieParser());
 
 /* ======================
-   Test Routes (WAJIB ADA)
+   Test Routes
 ====================== */
 app.get("/", (req, res) => {
   res.json({
@@ -98,9 +120,9 @@ app.use("/uploads", express.static(path.resolve("uploads")));
       console.log("ℹ️ Admin sudah ada, skip seed.");
     }
 
-    app.listen(PORT, () =>
-      console.log(`🚀 Server running on port ${PORT}`)
-    );
+    app.listen(PORT, () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
   } catch (err) {
     console.error("❌ Gagal konek ke database:", err);
     process.exit(1);
