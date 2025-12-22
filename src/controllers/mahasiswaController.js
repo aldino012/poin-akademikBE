@@ -3,6 +3,7 @@ import User from "../models/userModel.js";
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
 import { generateCVPdf } from "../utils/puppeteerCV.js";
+
 import { google } from "googleapis";
 import XLSX from "xlsx";
 
@@ -21,6 +22,7 @@ import {
   updateFile,
   deleteLocalFile,
   DRIVE_FOLDER_IMAGES,
+  streamFileFromDrive,
 } from "../utils/uploadToDrive.js";
 
 // ======================================================
@@ -785,17 +787,7 @@ export const cetakCvPdf = async (req, res) => {
 };
 
 // ===============================
-// GOOGLE DRIVE CLIENT (SELERAS)
-// ===============================
-const auth = new google.auth.GoogleAuth({
-  keyFile: path.join(process.cwd(), "src/config/gdrive-service-account.json"),
-  scopes: ["https://www.googleapis.com/auth/drive"],
-});
-
-const drive = google.drive({ version: "v3", auth });
-
-// ===============================
-// STREAM FOTO MAHASISWA (PRIVATE)
+// ✅ STREAM FOTO MAHASISWA (FINAL - ENV BASE64)
 // ===============================
 export const streamFotoMahasiswa = async (req, res) => {
   try {
@@ -805,22 +797,19 @@ export const streamFotoMahasiswa = async (req, res) => {
       return res.status(400).json({ message: "File ID tidak valid" });
     }
 
-    const driveRes = await drive.files.get(
-      {
-        fileId,
-        alt: "media",
-        supportsAllDrives: true,
-      },
-      { responseType: "stream" }
-    );
+    const { stream, headers } = await streamFileFromDrive(fileId);
 
-    // Header penting agar <img> bisa render
-    res.setHeader("Content-Type", "image/jpeg");
+    // Header aman agar <img> bisa render
+    res.setHeader(
+      "Content-Type",
+      headers?.["content-type"] || "image/jpeg"
+    );
     res.setHeader("Cache-Control", "private, max-age=3600");
 
-    driveRes.data.pipe(res);
+    stream.pipe(res);
   } catch (error) {
-    console.error("Stream foto gagal:", error.message);
+    console.error("❌ Stream foto gagal:", error.message);
     res.status(404).end();
   }
 };
+
