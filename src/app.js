@@ -20,51 +20,41 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 5050;
 
-// Penting untuk Railway / reverse proxy (cookies, ip, https)
+// Railway / proxy
 app.set("trust proxy", 1);
 
 // ======================
-// CORS (VERCEL + RAILWAY FIX)
+// CORS (SAFE UNTUK EXPRESS 5 / NODE 20)
 // ======================
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
-
-  // domain vercel production kamu (isi yang bener)
   "https://poin-akademik-fe.vercel.app",
-
-  // kalau kamu pakai domain preview tertentu, boleh tambah manual:
-  // "https://poin-akademik-a13z5put-aldinos-projects-ea7e2f5e.vercel.app",
 ];
 
-// izinkan semua subdomain vercel preview: https://xxxxx.vercel.app
+// allow semua preview vercel
 const vercelPreviewRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
 
-const corsOptions = {
-  origin: (origin, callback) => {
-    // Postman / server-to-server tidak punya origin
-    if (!origin) return callback(null, true);
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      if (!origin) return callback(null, true);
+      if (allowedOrigins.includes(origin)) return callback(null, true);
+      if (vercelPreviewRegex.test(origin)) return callback(null, true);
+      return callback(null, false);
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (vercelPreviewRegex.test(origin)) return callback(null, true);
-
-    console.log("❌ CORS blocked origin:", origin);
-    // Jangan lempar error ke preflight, cukup tolak dengan callback(null,false)
-    return callback(null, false);
-  },
-  credentials: true,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-};
-
-app.use(cors(corsOptions));
-// preflight harus aman
-app.options("*", cors(corsOptions));
+// ❌ JANGAN PAKAI app.options("*", …) — BIKIN CRASH
 
 // ======================
 // Middleware
 // ======================
-app.use(express.json({ limit: "2mb" }));
+app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
@@ -99,30 +89,7 @@ app.use("/api/klaim", klaimKegiatanRoutes);
 // ======================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-// pastikan folder uploads memang ada di root project (sesuai struktur kamu)
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
-
-// ======================
-// 404 handler (biar jelas)
-// ======================
-app.use((req, res) => {
-  res.status(404).json({
-    message: "Not Found",
-    path: req.originalUrl,
-  });
-});
-
-// ======================
-// Error handler (biar error kebaca di log railway)
-// ======================
-app.use((err, req, res, next) => {
-  console.error("❌ Unhandled error:", err);
-  res.status(500).json({
-    message: "Internal Server Error",
-    error: process.env.NODE_ENV === "production" ? "SERVER_ERROR" : err.message,
-  });
-});
 
 // ======================
 // DB Init + Server
