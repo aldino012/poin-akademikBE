@@ -13,18 +13,28 @@ export function bufferToTempFile(buffer, originalName) {
 }
 
 // =============================================================
-//  GOOGLE DRIVE CONFIG
+//  GOOGLE DRIVE CONFIG (🔥 PAKAI ENV, BUKAN FILE)
 // =============================================================
-const KEYFILE_PATH = path.join(
-  process.cwd(),
-  "src/config/gdrive-service-account.json"
-);
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+  throw new Error(
+    "GOOGLE_APPLICATION_CREDENTIALS_JSON belum diset di environment"
+  );
+}
+
+let credentials;
+try {
+  credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+} catch (err) {
+  throw new Error(
+    "GOOGLE_APPLICATION_CREDENTIALS_JSON bukan JSON valid"
+  );
+}
 
 export const DRIVE_FOLDER_FILES = "1t40n6b7lyDa25V8Dv3lLmpZHrTLstiQA"; // /Uploads/Files
 export const DRIVE_FOLDER_IMAGES = "12iLOetnVLDSz677mSUk1dyxEaMMCpfLF"; // /Uploads/Images
 
 const auth = new google.auth.GoogleAuth({
-  keyFile: KEYFILE_PATH,
+  credentials,
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
 
@@ -42,7 +52,7 @@ export function deleteLocalFile(filePath) {
 }
 
 // =============================================================
-//  UPLOAD FILE KE GOOGLE DRIVE + PUBLIC IMAGE URL
+//  UPLOAD FILE KE GOOGLE DRIVE
 // =============================================================
 export async function uploadToDrive(filePath, mimeType, folderId) {
   try {
@@ -65,16 +75,16 @@ export async function uploadToDrive(filePath, mimeType, folderId) {
       supportsAllDrives: true,
     });
 
-    const fileId = createRes.data.id;
-
     return {
-      id: fileId,
+      id: createRes.data.id,
       name: fileName,
     };
   } catch (error) {
+    console.error("Upload ke Drive gagal:", error.message);
     throw new Error("Upload gagal: " + error.message);
   }
 }
+
 // =============================================================
 //  DELETE FILE FROM DRIVE
 // =============================================================
@@ -88,7 +98,6 @@ export async function deleteFromDrive(fileId) {
     });
     return true;
   } catch (error) {
-    // 404 = file tidak ada / tidak punya akses (EXPECTED)
     if (error?.code === 404) {
       console.warn(
         "[INFO] Drive delete dilewati (file tidak ditemukan / tidak ada akses):",
@@ -97,7 +106,6 @@ export async function deleteFromDrive(fileId) {
       return false;
     }
 
-    // error lain (misalnya network)
     console.error("[ERROR] Drive delete error:", error.message);
     return false;
   }
@@ -111,10 +119,11 @@ export async function renameFile(fileId, newName) {
     await drive.files.update({
       fileId,
       requestBody: { name: newName },
+      supportsAllDrives: true,
     });
     return true;
   } catch (error) {
-    console.error("Gagal rename file:", error);
+    console.error("Gagal rename file:", error.message);
     return false;
   }
 }
@@ -131,7 +140,7 @@ export async function getFileInfo(fileId) {
     });
     return res.data;
   } catch (error) {
-    console.error("Gagal mengambil info file:", error);
+    console.error("Gagal mengambil info file:", error.message);
     return null;
   }
 }
@@ -171,7 +180,7 @@ export async function copyFile(fileId, newName) {
     });
     return res.data;
   } catch (error) {
-    console.error("Gagal menyalin file:", error);
+    console.error("Gagal menyalin file:", error.message);
     return null;
   }
 }
@@ -199,12 +208,14 @@ export async function moveFile(fileId, newFolderId) {
 
     return res.data;
   } catch (error) {
-    console.error("Gagal memindahkan file:", error);
+    console.error("Gagal memindahkan file:", error.message);
     return null;
   }
 }
 
-
+// =============================================================
+//  STREAM FILE DARI DRIVE
+// =============================================================
 export async function streamFileFromDrive(fileId) {
   if (!fileId) throw new Error("File ID tidak valid");
 
