@@ -20,27 +20,45 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT) || 5050;
 
-// Railway / proxy
+// =================================================
+// TRUST PROXY (WAJIB UNTUK COOKIE SECURE DI PROD)
+// =================================================
 app.set("trust proxy", 1);
 
-// ======================
-// CORS (SAFE UNTUK EXPRESS 5 / NODE 20)
-// ======================
+// =================================================
+// CORS CONFIG (AMAN UNTUK MOBILE + LAN + VERCEL)
+// =================================================
 const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "https://poin-akademik-fe.vercel.app",
 ];
 
-// allow semua preview vercel
+// regex untuk preview vercel
 const vercelPreviewRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
+
+// regex untuk LAN (akses FE dari HP)
+const lanRegex = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/;
 
 app.use(
   cors({
     origin: (origin, callback) => {
+      // request internal / curl / server-to-server
       if (!origin) return callback(null, true);
-      if (allowedOrigins.includes(origin)) return callback(null, true);
-      if (vercelPreviewRegex.test(origin)) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      if (vercelPreviewRegex.test(origin)) {
+        return callback(null, true);
+      }
+
+      if (lanRegex.test(origin)) {
+        return callback(null, true);
+      }
+
+      console.warn("❌ CORS blocked origin:", origin);
       return callback(null, false);
     },
     credentials: true,
@@ -49,23 +67,24 @@ app.use(
   })
 );
 
-// ❌ JANGAN PAKAI app.options("*", …) — BIKIN CRASH
+// ❌ JANGAN gunakan app.options("*", cors())
+// Express 5 + Node 20 bisa crash
 
-// ======================
-// Middleware
-// ======================
+// =================================================
+// MIDDLEWARE UTAMA
+// =================================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// ======================
-// Test Routes
-// ======================
+// =================================================
+// TEST ROUTES
+// =================================================
 app.get("/", (req, res) => {
   res.json({
     status: "OK",
     service: "poin-akademikBE",
-    env: process.env.NODE_ENV,
+    env: process.env.NODE_ENV || "development",
   });
 });
 
@@ -76,24 +95,25 @@ app.get("/health", (req, res) => {
   });
 });
 
-// ======================
-// API Routes
-// ======================
+// =================================================
+// API ROUTES
+// =================================================
 app.use("/api/auth", authRoutes);
 app.use("/api/mahasiswa", mahasiswaRoutes);
 app.use("/api/masterpoin", masterPoinRoutes);
 app.use("/api/klaim", klaimKegiatanRoutes);
 
-// ======================
-// Static uploads
-// ======================
+// =================================================
+// STATIC FILES (UPLOADS)
+// =================================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// ======================
-// DB Init + Server
-// ======================
+// =================================================
+// DB INIT + SERVER START
+// =================================================
 (async () => {
   try {
     await sequelize.authenticate();
@@ -102,7 +122,9 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
     await sequelize.sync({ alter: false, force: false });
     console.log("✅ Database synced");
 
-    const adminExist = await User.findOne({ where: { role: "admin" } });
+    const adminExist = await User.findOne({
+      where: { role: "admin" },
+    });
 
     if (!adminExist) {
       const hashed = await bcrypt.hash(

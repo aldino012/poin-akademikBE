@@ -7,6 +7,21 @@ import { Op } from "sequelize";
 const JWT_SECRET = process.env.JWT_SECRET || "please-change-this";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
+// =================================================
+// ENV HELPER
+// =================================================
+const isProduction = process.env.NODE_ENV === "production";
+
+// =================================================
+// COOKIE OPTIONS (SENTRAL, KONSISTEN)
+// =================================================
+const cookieOptions = {
+  httpOnly: true,
+  secure: isProduction, // true HANYA di HTTPS
+  sameSite: isProduction ? "none" : "lax", // mobile friendly di local
+  maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
+};
+
 /* =================================================
    LOGIN (NIM / NIP)
 ================================================= */
@@ -61,15 +76,10 @@ export const login = async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    /* =================================================
-       COOKIE (WAJIB BEGINI UNTUK VERCEL)
-    ================================================= */
-    res.cookie("token", token, {
-      httpOnly: true,
-      secure: true,        // ⬅ WAJIB (https)
-      sameSite: "none",    // ⬅ WAJIB (cross-site)
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
-    });
+    // =================================================
+    // SET COOKIE (AMAN UNTUK MOBILE & PROD)
+    // =================================================
+    res.cookie("token", token, cookieOptions);
 
     return res.json({
       message: "Login berhasil.",
@@ -85,7 +95,7 @@ export const login = async (req, res) => {
       },
     });
   } catch (err) {
-    console.error("Login error:", err);
+    console.error("❌ Login error:", err);
     return res.status(500).json({ message: "Server error saat login." });
   }
 };
@@ -113,6 +123,7 @@ export const getProfile = async (req, res) => {
       data,
     });
   } catch (err) {
+    console.error("❌ Get profile error:", err);
     return res.status(500).json({ message: "Gagal mengambil profile." });
   }
 };
@@ -146,6 +157,7 @@ export const changePassword = async (req, res) => {
 
     return res.json({ message: "Password berhasil diubah." });
   } catch (err) {
+    console.error("❌ Change password error:", err);
     return res.status(500).json({ message: "Gagal mengganti password." });
   }
 };
@@ -155,15 +167,11 @@ export const changePassword = async (req, res) => {
 ================================================= */
 export const logout = async (req, res) => {
   try {
-    res.clearCookie("token", {
-      httpOnly: true,
-      secure: true,
-      sameSite: "none",
-    });
+    res.clearCookie("token", cookieOptions);
 
     return res.json({ message: "Logout berhasil." });
   } catch (err) {
-    console.error("Logout error:", err);
+    console.error("❌ Logout error:", err);
     return res.status(500).json({ message: "Gagal logout." });
   }
 };
