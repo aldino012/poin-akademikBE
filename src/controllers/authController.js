@@ -7,10 +7,13 @@ import { Op } from "sequelize";
 const JWT_SECRET = process.env.JWT_SECRET || "please-change-this";
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
-// 🔹 LOGIN (bisa pakai NIM atau NIP)
+// =========================
+// LOGIN (NIM / NIP)
+// =========================
 export const login = async (req, res) => {
   try {
     const { identifier, password } = req.body;
+
     if (!identifier || !password) {
       return res
         .status(400)
@@ -24,25 +27,23 @@ export const login = async (req, res) => {
       include: { model: Mahasiswa },
     });
 
-    if (!user)
+    if (!user) {
       return res.status(404).json({ message: "User tidak ditemukan." });
-
-    const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ message: "Password salah." });
-
-    let mahasiswaId = null;
-
-    // jika role mahasiswa, pastikan kita punya id_mhs
-    if (user.role === "mahasiswa") {
-      if (user.Mahasiswa && user.Mahasiswa.id_mhs) {
-        mahasiswaId = user.Mahasiswa.id_mhs;
-      } else {
-        const m = await Mahasiswa.findOne({ where: { nim: user.nim } });
-        mahasiswaId = m ? m.id_mhs : null;
-      }
     }
 
-    // Buat token JWT
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) {
+      return res.status(401).json({ message: "Password salah." });
+    }
+
+    let mahasiswaId = null;
+    if (user.role === "mahasiswa") {
+      mahasiswaId =
+        user.Mahasiswa?.id_mhs ||
+        (await Mahasiswa.findOne({ where: { nim: user.nim } }))?.id_mhs ||
+        null;
+    }
+
     const token = jwt.sign(
       {
         id: user.id,
@@ -55,15 +56,16 @@ export const login = async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
-    // Set token sebagai httpOnly cookie
+    // 🔥 COOKIE CONFIG WAJIB UNTUK VERCEL
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
-      sameSite: "lax",
+      secure: true,            // ⬅ WAJIB HTTPS
+      sameSite: "none",        // ⬅ WAJIB CROSS-SITE
+      maxAge: 1000 * 60 * 60 * 24 * 7,
+      path: "/",
     });
 
-    res.json({
+    return res.status(200).json({
       message: "Login berhasil.",
       role: user.role,
       user: {
@@ -76,76 +78,82 @@ export const login = async (req, res) => {
         total_poin: user.Mahasiswa?.total_poin || 0,
       },
     });
-
   } catch (err) {
     console.error("Login error:", err);
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: "Server error saat login." });
   }
-};  
+};
 
-// 🔹 GET PROFILE (berdasarkan token)
+// =========================
+// GET PROFILE
+// =========================
 export const getProfile = async (req, res) => {
   try {
     const { role, nim, nip } = req.user;
 
-    let data;
-    if (role === "mahasiswa") {
-      data = await Mahasiswa.findOne({ where: { nim } });
-    } else {
-      data = await User.findOne({ where: { nip } });
-    }   
+    const data =
+      role === "mahasiswa"
+        ? await Mahasiswa.findOne({ where: { nim } })
+        : await User.findOne({ where: { nip } });
 
-    if (!data)
+    if (!data) {
       return res.status(404).json({ message: "Data tidak ditemukan." });
+    }
 
-    res.json({ message: "Profile ditemukan.", data });
+    return res.json({ message: "Profile ditemukan.", data });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-// 🔹 GANTI PASSWORD
+// =========================
+// CHANGE PASSWORD
+// =========================
 export const changePassword = async (req, res) => {
   try {
     const { id } = req.user;
     const { oldPassword, newPassword } = req.body;
 
-    if (!oldPassword || !newPassword)
+    if (!oldPassword || !newPassword) {
       return res
         .status(400)
         .json({ message: "Old & new password wajib diisi." });
+    }
 
     const user = await User.findByPk(id);
-    if (!user)
+    if (!user) {
       return res.status(404).json({ message: "User tidak ditemukan." });
+    }
 
     const match = await bcrypt.compare(oldPassword, user.password);
-    if (!match) return res.status(401).json({ message: "Old password salah." });
+    if (!match) {
+      return res.status(401).json({ message: "Old password salah." });
+    }
 
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    res.json({ message: "Password berhasil diubah." });
+    return res.json({ message: "Password berhasil diubah." });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    return res.status(500).json({ message: err.message });
   }
 };
 
-
-// 🔹 LOGOUT
+// =========================
+// LOGOUT
+// =========================
 export const logout = async (req, res) => {
   try {
-    // Kalau nanti pakai cookie jwt, ini kepake
     res.clearCookie("token", {
       httpOnly: true,
-      secure: false,
-      sameSite: "lax",
+      secure: true,
+      sameSite: "none",
+      path: "/",
     });
 
-    return res.status(200).json({ message: "Logout berhasil (JWT removed)." });
+    return res.status(200).json({ message: "Logout berhasil." });
   } catch (err) {
     console.error("Logout error:", err);
     return res.status(500).json({ message: "Gagal logout." });
   }
 };
-
