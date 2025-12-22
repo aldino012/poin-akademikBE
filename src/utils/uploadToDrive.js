@@ -13,20 +13,25 @@ export function bufferToTempFile(buffer, originalName) {
 }
 
 // =============================================================
-//  GOOGLE DRIVE CONFIG (🔥 PAKAI ENV, BUKAN FILE)
+//  GOOGLE DRIVE CONFIG (🔥 BASE64 ENV – FINAL)
 // =============================================================
-if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON) {
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64) {
   throw new Error(
-    "GOOGLE_APPLICATION_CREDENTIALS_JSON belum diset di environment"
+    "GOOGLE_APPLICATION_CREDENTIALS_BASE64 belum diset di environment"
   );
 }
 
 let credentials;
 try {
-  credentials = JSON.parse(process.env.GOOGLE_APPLICATION_CREDENTIALS_JSON);
+  credentials = JSON.parse(
+    Buffer.from(
+      process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64,
+      "base64"
+    ).toString("utf-8")
+  );
 } catch (err) {
   throw new Error(
-    "GOOGLE_APPLICATION_CREDENTIALS_JSON bukan JSON valid"
+    "GOOGLE_APPLICATION_CREDENTIALS_BASE64 bukan base64 JSON yang valid"
   );
 }
 
@@ -38,7 +43,10 @@ const auth = new google.auth.GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/drive"],
 });
 
-const drive = google.drive({ version: "v3", auth });
+const drive = google.drive({
+  version: "v3",
+  auth,
+});
 
 // =============================================================
 //  HELPER: Hapus file lokal
@@ -47,7 +55,7 @@ export function deleteLocalFile(filePath) {
   try {
     if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
   } catch (error) {
-    console.error("Gagal menghapus file lokal:", error);
+    console.error("Gagal menghapus file lokal:", error.message);
   }
 }
 
