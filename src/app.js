@@ -1,118 +1,151 @@
-import express from "express";
-import dotenv from "dotenv";
-import cors from "cors";
-import sequelize from "./config/db.js";
 import bcrypt from "bcryptjs";
-import "./models/associations.js";
-import User from "./models/userModel.js";
-import cookieParser from "cookie-parser";
-import path from "path";
+import jwt from "jsonwebtoken";
+import User from "../models/userModel.js";
+import Mahasiswa from "../models/mahasiswaModel.js";
+import { Op } from "sequelize";
 
-// Routes
-import mahasiswaRoutes from "./routes/mahasiswaRoutes.js";
-import masterPoinRoutes from "./routes/masterpoinRoutes.js";
-import klaimKegiatanRoutes from "./routes/klaimKegiatanRoutes.js";
-import authRoutes from "./routes/authRoutes.js";
+const JWT_SECRET = process.env.JWT_SECRET || "please-change-this";
+const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 
-dotenv.config();
-
-const app = express();
-const PORT = process.env.PORT || 5050;
-
-/* ======================
-   CORS (FIXED FOR VERCEL + RAILWAY)
-====================== */
-const allowedOrigins = [
-  "http://localhost:3000",
-  "https://poin-akademik-8xj307xo-aldinos-projects-ea7e2f5e.vercel.app",
-];
-
-app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin) return callback(null, true); // allow server-to-server
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-      return callback(new Error("CORS not allowed"));
-    },
-    credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
-/* ======================
-   Middleware
-====================== */
-app.use(express.json());
-app.use(cookieParser());
-
-/* ======================
-   Test Routes
-====================== */
-app.get("/", (req, res) => {
-  res.json({
-    status: "OK",
-    service: "poin-akademikBE",
-    env: process.env.NODE_ENV,
-  });
-});
-
-app.get("/health", (req, res) => {
-  res.json({
-    status: "healthy",
-    time: new Date().toISOString(),
-  });
-});
-
-/* ======================
-   API Routes
-====================== */
-app.use("/api/auth", authRoutes);
-app.use("/api/mahasiswa", mahasiswaRoutes);
-app.use("/api/masterpoin", masterPoinRoutes);
-app.use("/api/klaim", klaimKegiatanRoutes);
-
-/* ======================
-   Static Uploads
-====================== */
-app.use("/uploads", express.static(path.resolve("uploads")));
-
-/* ======================
-   DB Init + Server
-====================== */
-(async () => {
+// 🔹 LOGIN (bisa pakai NIM atau NIP)
+export const login = async (req, res) => {
   try {
-    await sequelize.authenticate();
-    console.log("✅ Database connected");
-
-    await sequelize.sync({ alter: false, force: false });
-    console.log("✅ Database synced");
-
-    const adminExist = await User.findOne({ where: { role: "admin" } });
-    if (!adminExist) {
-      const hashed = await bcrypt.hash(
-        process.env.ADMIN_PASSWORD || "admin123",
-        10
-      );
-
-      await User.create({
-        nip: "1234567890",
-        nama: "Admin Kemahasiswaan",
-        email: "kemahasiswaan@kampus.ac.id",
-        password: hashed,
-        role: "admin",
-      });
-
-      console.log("✅ Admin default dibuat");
+    const { identifier, password } = req.body;
+    if (!identifier || !password) {
+      return res
+        .status(400)
+        .json({ message: "NIM/NIP dan password wajib diisi." });
     }
 
-    app.listen(PORT, () =>
-      console.log(`🚀 Server running on port ${PORT}`)
+    const user = await User.findOne({
+      where: {
+        [Op.or]: [{ nim: identifier }, { nip: identifier }],
+      },
+      include: { model: Mahasiswa },
+    });
+
+    if (!user)
+      return res.status(404).json({ message: "User tidak ditemukan." });
+
+    const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ message: "Password salah." });
+
+    let mahasiswaId = null;
+
+    // jika role mahasiswa, pastikan kita punya id_mhs
+    if (user.role === "mahasiswa") {
+      if (user.Mahasiswa && user.Mahasiswa.id_mhs) {
+        mahasiswaId = user.Mahasiswa.id_mhs;
+      } else {
+        const m = await Mahasiswa.findOne({ where: { nim: user.nim } });
+        mahasiswaId = m ? m.id_mhs : null;
+      }
+    }
+
+    // Buat token JWT
+    const token = jwt.sign(
+      {
+        id: user.id,
+        role: user.role,
+        nim: user.nim,
+        nip: user.nip,
+        mahasiswa_id: mahasiswaId,
+      },
+      JWT_SECRET,
+      { expiresIn: JWT_EXPIRES_IN }
     );
+
+    // Set token sebagai httpOnly cookie
+    res.cookie("token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
+      sameSite: "lax",
+    });
+
+    res.json({
+      message: "Login berhasil.",
+      role: user.role,
+      user: {
+        id: user.id,
+        nim: user.nim,
+        nip: user.nip,
+        nama: user.nama || user.Mahasiswa?.nama_mhs || "",
+        email: user.email || user.Mahasiswa?.email || "",
+        foto: user.Mahasiswa?.foto || null,
+        total_poin: user.Mahasiswa?.total_poin || 0,
+      },
+    });
+
   } catch (err) {
-    console.error("❌ Server crash:", err);
-    process.exit(1);
+    console.error("Login error:", err);
+    res.status(500).json({ message: err.message });
   }
-})();
+};  
+
+// 🔹 GET PROFILE (berdasarkan token)
+export const getProfile = async (req, res) => {
+  try {
+    const { role, nim, nip } = req.user;
+
+    let data;
+    if (role === "mahasiswa") {
+      data = await Mahasiswa.findOne({ where: { nim } });
+    } else {
+      data = await User.findOne({ where: { nip } });
+    }   
+
+    if (!data)
+      return res.status(404).json({ message: "Data tidak ditemukan." });
+
+    res.json({ message: "Profile ditemukan.", data });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// 🔹 GANTI PASSWORD
+export const changePassword = async (req, res) => {
+  try {
+    const { id } = req.user;
+    const { oldPassword, newPassword } = req.body;
+
+    if (!oldPassword || !newPassword)
+      return res
+        .status(400)
+        .json({ message: "Old & new password wajib diisi." });
+
+    const user = await User.findByPk(id);
+    if (!user)
+      return res.status(404).json({ message: "User tidak ditemukan." });
+
+    const match = await bcrypt.compare(oldPassword, user.password);
+    if (!match) return res.status(401).json({ message: "Old password salah." });
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    res.json({ message: "Password berhasil diubah." });
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+
+// 🔹 LOGOUT
+export const logout = async (req, res) => {
+  try {
+    // Kalau nanti pakai cookie jwt, ini kepake
+    res.clearCookie("token", {
+      httpOnly: true,
+      secure: false,
+      sameSite: "lax",
+    });
+
+    return res.status(200).json({ message: "Logout berhasil (JWT removed)." });
+  } catch (err) {
+    console.error("Logout error:", err);
+    return res.status(500).json({ message: "Gagal logout." });
+  }
+};
+
