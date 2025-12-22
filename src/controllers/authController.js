@@ -13,14 +13,24 @@ const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1d";
 const isProduction = process.env.NODE_ENV === "production";
 
 // =================================================
-// COOKIE OPTIONS (SENTRAL, KONSISTEN)
+// COOKIE OPTIONS (FINAL STRATEGY)
 // =================================================
-const cookieOptions = {
-  httpOnly: true,
-  secure: isProduction, // true HANYA di HTTPS
-  sameSite: isProduction ? "none" : "lax", // mobile friendly di local
-  maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
-};
+// DEV / LAN  : strict + secure false  -> cookie PASTI kesimpan di mobile
+// PRODUCTION : none   + secure true   -> cross-site HTTPS
+// =================================================
+const cookieOptions = isProduction
+  ? {
+      httpOnly: true,
+      secure: true,
+      sameSite: "none",
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
+    }
+  : {
+      httpOnly: true,
+      secure: false,
+      sameSite: "strict", // 🔥 KUNCI MASALAH MOBILE LAN
+      maxAge: 1000 * 60 * 60 * 24 * 7, // 7 hari
+    };
 
 /* =================================================
    LOGIN (NIM / NIP)
@@ -77,7 +87,7 @@ export const login = async (req, res) => {
     );
 
     // =================================================
-    // SET COOKIE (AMAN UNTUK MOBILE & PROD)
+    // SET COOKIE (FINAL, MOBILE SAFE)
     // =================================================
     res.cookie("token", token, cookieOptions);
 
