@@ -37,9 +37,16 @@ const cookieOptions = isProduction
 ================================================= */
 export const login = async (req, res) => {
   try {
+    // ================= DEBUG 1 =================
+    console.log("🔐 LOGIN REQUEST MASUK");
+    console.log("🌐 Origin:", req.headers.origin);
+    console.log("📱 User-Agent:", req.headers["user-agent"]);
+    console.log("🍪 Cookies masuk:", req.cookies);
+
     const { identifier, password } = req.body;
 
     if (!identifier || !password) {
+      console.log("❌ Identifier / password kosong");
       return res
         .status(400)
         .json({ message: "NIM/NIP dan password wajib diisi." });
@@ -53,11 +60,13 @@ export const login = async (req, res) => {
     });
 
     if (!user) {
+      console.log("❌ User tidak ditemukan:", identifier);
       return res.status(404).json({ message: "User tidak ditemukan." });
     }
 
     const match = await bcrypt.compare(password, user.password);
     if (!match) {
+      console.log("❌ Password salah untuk user:", identifier);
       return res.status(401).json({ message: "Password salah." });
     }
 
@@ -86,10 +95,17 @@ export const login = async (req, res) => {
       { expiresIn: JWT_EXPIRES_IN }
     );
 
+    // ================= DEBUG 2 =================
+    console.log("🍪 AKAN SET COOKIE TOKEN");
+    console.log("⚙️ Cookie options:", cookieOptions);
+
     // =================================================
     // SET COOKIE (FINAL, MOBILE SAFE)
     // =================================================
     res.cookie("token", token, cookieOptions);
+
+    // ================= DEBUG 3 =================
+    console.log("✅ LOGIN BERHASIL, RESPONSE DIKIRIM");
 
     return res.json({
       message: "Login berhasil.",

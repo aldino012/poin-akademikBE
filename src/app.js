@@ -21,54 +21,27 @@ const app = express();
 const PORT = Number(process.env.PORT) || 5050;
 
 // =================================================
-// TRUST PROXY (WAJIB UNTUK COOKIE SECURE DI PROD)
+// TRUST PROXY (WAJIB UNTUK RAILWAY + COOKIE SECURE)
 // =================================================
 app.set("trust proxy", 1);
 
 // =================================================
-// CORS CONFIG (AMAN UNTUK MOBILE + LAN + VERCEL)
+// CORS (PRODUCTION FINAL – DIKUNCI)
 // =================================================
-const allowedOrigins = [
-  "http://localhost:3000",
-  "http://127.0.0.1:3000",
-  "https://poin-akademik-fe.vercel.app",
-];
-
-// regex untuk preview vercel
-const vercelPreviewRegex = /^https:\/\/[a-z0-9-]+\.vercel\.app$/i;
-
-// regex untuk LAN (akses FE dari HP)
-const lanRegex = /^http:\/\/192\.168\.\d{1,3}\.\d{1,3}:3000$/;
+// ⚠️ HARUS PERSIS SAMA DENGAN DOMAIN FE DI BROWSER
+const FRONTEND_ORIGIN = "https://poin-akademik-fe.vercel.app";
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // request internal / curl / server-to-server
-      if (!origin) return callback(null, true);
-
-      if (allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      if (vercelPreviewRegex.test(origin)) {
-        return callback(null, true);
-      }
-
-      if (lanRegex.test(origin)) {
-        return callback(null, true);
-      }
-
-      console.warn("❌ CORS blocked origin:", origin);
-      return callback(null, false);
-    },
+    origin: FRONTEND_ORIGIN,
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
-// ❌ JANGAN gunakan app.options("*", cors())
-// Express 5 + Node 20 bisa crash
+// ❌ JANGAN pakai app.options("*", …)
+// Express 5 + Node 20 bisa bermasalah
 
 // =================================================
 // MIDDLEWARE UTAMA
@@ -84,7 +57,7 @@ app.get("/", (req, res) => {
   res.json({
     status: "OK",
     service: "poin-akademikBE",
-    env: process.env.NODE_ENV || "development",
+    env: process.env.NODE_ENV,
   });
 });
 
