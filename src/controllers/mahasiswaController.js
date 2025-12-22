@@ -564,6 +564,10 @@ export const importMahasiswaExcel = async (req, res) => {
 
     let inserted = 0;
     let skipped = 0;
+    let failed = 0;
+
+    // optional: catat error baris biar enak debug di FE
+    const rowErrors = [];
 
     // ======================================================
     //  LOOP DATA EXCEL
@@ -577,73 +581,94 @@ export const importMahasiswaExcel = async (req, res) => {
         continue;
       }
 
-      // ======================================================
-      //  NORMALISASI DATA (FILTER)
-      // ======================================================
-      const row = normalizeMahasiswaRow(r);
+      try {
+        // ======================================================
+        //  NORMALISASI DATA (FILTER)
+        // ======================================================
+        const row = normalizeMahasiswaRow(r);
 
-      // ❗ CEK DUPLIKAT NIM
-      const exist = await Mahasiswa.findOne({ where: { nim: row.nim } });
-      if (exist) {
-        skipped++;
-        continue;
-      }
+        // ❗ CEK DUPLIKAT NIM
+        const exist = await Mahasiswa.findOne({ where: { nim: row.nim } });
+        if (exist) {
+          skipped++;
+          continue;
+        }
 
-      // ======================================================
-      //  GUARD TANGGAL (🔥 KUNCI HILANGKAN WARNING MOMENT)
-      // ======================================================
-      const safeTanggalLahir =
-        row.tgl_lahir && /^\d{4}-\d{2}-\d{2}$/.test(row.tgl_lahir)
-          ? row.tgl_lahir
-          : null;
+        // ======================================================
+        //  GUARD TANGGAL (🔥 KUNCI HILANGKAN WARNING MOMENT)
+        // ======================================================
+        const safeTanggalLahir =
+          row.tgl_lahir && /^\d{4}-\d{2}-\d{2}$/.test(row.tgl_lahir)
+            ? row.tgl_lahir
+            : null;
 
-      // ======================================================
-      //  SIMPAN DATA MAHASISWA
-      // ======================================================
-      const created = await Mahasiswa.create({
-        nim: row.nim,
-        nama_mhs: row.nama_mhs,
-        prodi: row.prodi,
-        angkatan: row.angkatan,
+        // ======================================================
+        //  DEFAULT VALUE WAJIB (FIX VALIDATION notEmpty)
+        // ======================================================
+        const safeAlamat =
+          row.alamat && String(row.alamat).trim() !== "" ? row.alamat : "-";
 
-        tempat_lahir: row.tempat_lahir,
-        tgl_lahir: safeTanggalLahir, // ✅ SUDAH AMAN
+        const safeAsalSekolah =
+          row.asal_sekolah && String(row.asal_sekolah).trim() !== ""
+            ? row.asal_sekolah
+            : "-";
 
-        target_poin: row.target_poin,
-        total_poin: row.total_poin,
-
-        pekerjaan: row.pekerjaan,
-        alamat: row.alamat,
-        asal_sekolah: row.asal_sekolah,
-        thn_lulus: row.thn_lulus,
-
-        tlp_saya: row.tlp_saya,
-        tlp_rumah: row.tlp_rumah,
-
-        email: row.email,
-        jenis_kelamin: row.jenis_kelamin,
-
-        foto: row.foto,
-      });
-
-      // ======================================================
-      //  BUAT USER LOGIN (password = NIM)
-      // ======================================================
-      const userExist = await User.findOne({ where: { nim: row.nim } });
-
-      if (!userExist) {
-        const hashedPassword = await bcrypt.hash(row.nim.toString(), 10);
-
-        await User.create({
+        // ======================================================
+        //  SIMPAN DATA MAHASISWA
+        // ======================================================
+        await Mahasiswa.create({
           nim: row.nim,
-          nama: row.nama_mhs,
-          email: row.email,
-          password: hashedPassword,
-          role: "mahasiswa",
+          nama_mhs: row.nama_mhs,
+          prodi: row.prodi,
+          angkatan: row.angkatan,
+
+          tempat_lahir: row.tempat_lahir || "-",
+          tgl_lahir: safeTanggalLahir, // ✅ SUDAH AMAN
+
+          target_poin: Number(row.target_poin) || 0,
+          total_poin: Number(row.total_poin) || 0,
+
+          pekerjaan: row.pekerjaan || "-",
+          alamat: safeAlamat, // ✅ FIX
+          asal_sekolah: safeAsalSekolah, // ✅ FIX
+          thn_lulus: row.thn_lulus || null,
+
+          tlp_saya: row.tlp_saya || null,
+          tlp_rumah: row.tlp_rumah || null,
+
+          email: row.email || null,
+          jenis_kelamin: row.jenis_kelamin || null,
+
+          foto: row.foto || null,
+        });
+
+        // ======================================================
+        //  BUAT USER LOGIN (password = NIM)
+        // ======================================================
+        const userExist = await User.findOne({ where: { nim: row.nim } });
+
+        if (!userExist) {
+          const hashedPassword = await bcrypt.hash(row.nim.toString(), 10);
+
+          await User.create({
+            nim: row.nim,
+            nama: row.nama_mhs,
+            email: row.email || null,
+            password: hashedPassword,
+            role: "mahasiswa",
+          });
+        }
+
+        inserted++;
+      } catch (rowErr) {
+        failed++;
+        rowErrors.push({
+          rowIndex: i + 2, // +2 biar sesuai baris excel (1 header + index mulai 0)
+          nim: r.nim,
+          nama_mhs: r.nama_mhs,
+          error: rowErr?.message || "Unknown error",
         });
       }
-
-      inserted++;
     }
 
     // ======================================================
@@ -655,7 +680,9 @@ export const importMahasiswaExcel = async (req, res) => {
       message: "Import Mahasiswa selesai",
       total: rows.length,
       berhasil: inserted,
-      gagal: skipped,
+      skip: skipped,
+      gagal: failed,
+      errors: rowErrors, // biar FE bisa tampilkan baris mana yang gagal
     });
   } catch (err) {
     console.error("IMPORT ERROR:", err);
@@ -667,6 +694,7 @@ export const importMahasiswaExcel = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
+
 
 export const exportMahasiswaExcel = async (req, res) => {
   try {
