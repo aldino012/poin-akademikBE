@@ -10,7 +10,7 @@ import path from "path";
 
 // Routes
 import mahasiswaRoutes from "./routes/mahasiswaRoutes.js";
-import masterPoinRoutes from "./routes/masterPoinRoutes.js";
+import masterPoinRoutes from "./routes/masterpoinRoutes.js";
 import klaimKegiatanRoutes from "./routes/klaimKegiatanRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 
@@ -20,39 +20,27 @@ const app = express();
 const PORT = process.env.PORT || 5050;
 
 /* ======================
-   CORS (DEV + PROD + VERCEL)
+   CORS (FIXED FOR VERCEL + RAILWAY)
 ====================== */
 const allowedOrigins = [
   "http://localhost:3000",
-  "https://poin-akademikfe-production.up.railway.app",
+  "https://poin-akademik-8xj307xo-aldinos-projects-ea7e2f5e.vercel.app",
 ];
 
 app.use(
   cors({
-    origin: (origin, callback) => {
-      // allow server-to-server / postman / curl
-      if (!origin) return callback(null, true);
-
-      // allow explicit origins
+    origin: function (origin, callback) {
+      if (!origin) return callback(null, true); // allow server-to-server
       if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
-      // 🔥 allow ALL vercel preview & production domains
-      if (origin.endsWith(".vercel.app")) {
-        return callback(null, true);
-      }
-
-      return callback(new Error("CORS not allowed"), false);
+      return callback(new Error("CORS not allowed"));
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-
-// 🔥 WAJIB: handle preflight
-app.options("*", cors());
 
 /* ======================
    Middleware
@@ -92,7 +80,7 @@ app.use("/api/klaim", klaimKegiatanRoutes);
 app.use("/uploads", express.static(path.resolve("uploads")));
 
 /* ======================
-   DB Init + Seed
+   DB Init + Server
 ====================== */
 (async () => {
   try {
@@ -100,12 +88,14 @@ app.use("/uploads", express.static(path.resolve("uploads")));
     console.log("✅ Database connected");
 
     await sequelize.sync({ alter: false, force: false });
-    console.log("✅ Database synced (no auto-alter)");
+    console.log("✅ Database synced");
 
     const adminExist = await User.findOne({ where: { role: "admin" } });
     if (!adminExist) {
-      const adminPass = process.env.ADMIN_PASSWORD || "admin123";
-      const hashed = await bcrypt.hash(adminPass, 10);
+      const hashed = await bcrypt.hash(
+        process.env.ADMIN_PASSWORD || "admin123",
+        10
+      );
 
       await User.create({
         nip: "1234567890",
@@ -115,16 +105,14 @@ app.use("/uploads", express.static(path.resolve("uploads")));
         role: "admin",
       });
 
-      console.log("✅ Admin default dibuat (nip: 1234567890 / pass: admin123)");
-    } else {
-      console.log("ℹ️ Admin sudah ada, skip seed.");
+      console.log("✅ Admin default dibuat");
     }
 
-    app.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-    });
+    app.listen(PORT, () =>
+      console.log(`🚀 Server running on port ${PORT}`)
+    );
   } catch (err) {
-    console.error("❌ Gagal konek ke database:", err);
+    console.error("❌ Server crash:", err);
     process.exit(1);
   }
 })();
