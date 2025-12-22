@@ -128,7 +128,7 @@ export const getMahasiswaCV = async (req, res) => {
     const kegiatan = await KlaimKegiatan.findAll({
       where: {
         mahasiswa_id: id,
-        status: "disetujui", // ✅ lowercase sesuai DB
+        status: "Disetujui", // ✅ FIX
       },
       include: [
         {
