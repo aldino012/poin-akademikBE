@@ -30,7 +30,9 @@ import {
 // ======================================================
 export const getAllMahasiswa = async (req, res) => {
   try {
-    const raw = await Mahasiswa.findAll();
+    const raw = await Mahasiswa.findAll({
+      order: [["order_index", "ASC"]], // 🔥 KUNCI UTAMA
+    });
 
     const data = raw.map((m) => ({
       ...m.dataValues,
@@ -50,6 +52,7 @@ export const getAllMahasiswa = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // ======================================================
 // ✅ GET BIODATA MAHASISWA LOGIN
@@ -251,6 +254,11 @@ export const createMahasiswa = async (req, res) => {
     }
 
     // ================================
+    // 🔥 AMBIL ORDER_INDEX TERAKHIR
+    // ================================
+    const maxOrder = await Mahasiswa.max("order_index");
+
+    // ================================
     // UPLOAD FOTO KE GOOGLE DRIVE
     // ================================
     let fotoFileId = null;
@@ -277,6 +285,9 @@ export const createMahasiswa = async (req, res) => {
       foto_file_id: fotoFileId,
       target_poin: Number(payload.target_poin) || 0,
       total_poin: Number(payload.total_poin) || 0,
+
+      // 🔥 KUNCI URUTAN STABIL
+      order_index: (maxOrder || 0) + 1,
     });
 
     // ================================
@@ -302,7 +313,6 @@ export const createMahasiswa = async (req, res) => {
     });
   }
 };
-
 
 // ======================================================
 // ✅ UPDATE MAHASISWA
