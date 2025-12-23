@@ -31,14 +31,21 @@ import {
 export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
-      // 🔥 sementara pakai PK agar tidak error
-      order: [["id_mhs", "ASC"]],
+      order: [
+        ["total_poin", "DESC"], // 🔝 POIN TERBESAR DI ATAS
+        ["id_mhs", "ASC"], // 🔒 STABIL (ANTI RESHUFFLE)
+      ],
     });
 
     const data = raw.map((m) => ({
       ...m.dataValues,
+
+      // ❌ jangan kirim URL drive
       foto: null,
+
+      // ✅ kirim file id saja
       foto_file_id: m.foto_file_id,
+
       total_poin: Number(m.total_poin) || 0,
       target_poin: Number(m.target_poin) || 0,
     }));
@@ -49,6 +56,7 @@ export const getAllMahasiswa = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 // ======================================================
 // ✅ GET BIODATA MAHASISWA LOGIN
