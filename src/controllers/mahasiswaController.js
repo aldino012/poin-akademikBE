@@ -495,7 +495,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
     const kegiatan = await KlaimKegiatan.findAll({
       where: {
         mahasiswa_id: id,
-        status: "disetujui", // 🔥 HANYA VALID
+        status: "Disetujui", // ✅ FIX CASE (INI KUNCI UTAMA)
       },
       include: [
         {
@@ -506,23 +506,18 @@ export const getMahasiswaKegiatan = async (req, res) => {
       order: [["tanggal_pelaksanaan", "DESC"]],
     });
 
-    /* ================= FORMAT DATA ================= */
     const formatData = kegiatan.map((item) => ({
       id: item.id,
-      kode: item.masterPoin?.kode_keg || "", // 🔥 KUNCI UTAMA
-      namaKegiatan:
+      kode: item.masterPoin?.kode_keg || "",
+      nama_kegiatan:
         item.masterPoin?.nama_kegiatan ||
         item.masterPoin?.jenis_kegiatan ||
         item.rincian_acara ||
         "-",
-      jenis: item.masterPoin?.jenis_kegiatan || "",
-      posisi: item.masterPoin?.posisi || "-",
-      tingkat: item.tingkat || "-",
       tanggal: item.tanggal_pelaksanaan,
       poin: Number(item.poin) || 0,
     }));
 
-    /* ================= PREFIX RESMI ================= */
     const ORGANISASI_PREFIX = [
       "BEM",
       "UKM",
@@ -534,23 +529,21 @@ export const getMahasiswaKegiatan = async (req, res) => {
       "MNT",
     ];
 
-    const PRESTASI_PREFIX = ["MDB"]; // 🔥 KHUSUS PRESTASI
+    const PRESTASI_PREFIX = ["MDB"];
 
-    /* ================= FILTER ORGANISASI ================= */
     const organisasi = formatData.filter((item) =>
       ORGANISASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
     );
 
-    /* ================= FILTER PRESTASI ================= */
     const prestasi = formatData.filter((item) =>
       PRESTASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
     );
 
     return res.json({
       message: "OK",
+      data: formatData, // 🔥 INI DIPAKAI FE
       organisasi,
       prestasi,
-      kegiatan: formatData, // 🔥 semua kegiatan tetap ada
     });
   } catch (err) {
     console.error("❌ getMahasiswaKegiatan error:", err);
