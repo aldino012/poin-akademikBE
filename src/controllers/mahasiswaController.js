@@ -31,28 +31,24 @@ import {
 export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
-      order: [["order_index", "ASC"]], // 🔥 KUNCI UTAMA
+      // 🔥 sementara pakai PK agar tidak error
+      order: [["id_mhs", "ASC"]],
     });
 
     const data = raw.map((m) => ({
       ...m.dataValues,
-
-      // ❌ JANGAN KIRIM URL DRIVE
       foto: null,
-
-      // ✅ KIRIM FILE ID SAJA
       foto_file_id: m.foto_file_id,
-
       total_poin: Number(m.total_poin) || 0,
       target_poin: Number(m.target_poin) || 0,
     }));
 
     res.json(data);
   } catch (err) {
+    console.error("getAllMahasiswa error:", err);
     res.status(500).json({ message: err.message });
   }
 };
-
 
 // ======================================================
 // ✅ GET BIODATA MAHASISWA LOGIN
