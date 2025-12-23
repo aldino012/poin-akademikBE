@@ -32,8 +32,7 @@ export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
       order: [
-        ["total_poin", "DESC"], // 🔝 POIN TERBESAR DI ATAS
-        ["id_mhs", "ASC"], // 🔒 STABIL (ANTI RESHUFFLE)
+        ["order_index", "ASC"], // 🔥 SATU-SATUNYA SUMBER URUTAN
       ],
     });
 
@@ -56,6 +55,7 @@ export const getAllMahasiswa = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 
 // ======================================================
