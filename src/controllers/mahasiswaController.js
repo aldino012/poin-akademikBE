@@ -32,7 +32,8 @@ export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
       order: [
-        ["order_index", "ASC"], // 🔥 SATU-SATUNYA SUMBER URUTAN
+        ["total_poin", "DESC"], // 🔥 PRIORITAS: poin tertinggi di atas
+        ["order_index", "ASC"], // 🔒 fallback agar urutan stabil
       ],
     });
 
@@ -45,6 +46,7 @@ export const getAllMahasiswa = async (req, res) => {
       // ✅ kirim file id saja
       foto_file_id: m.foto_file_id,
 
+      // 🔥 pastikan numeric (penting untuk FE)
       total_poin: Number(m.total_poin) || 0,
       target_poin: Number(m.target_poin) || 0,
     }));
@@ -55,6 +57,7 @@ export const getAllMahasiswa = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
+
 
 
 
