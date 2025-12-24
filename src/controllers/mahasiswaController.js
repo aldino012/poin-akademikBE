@@ -498,7 +498,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
     const kegiatan = await KlaimKegiatan.findAll({
       where: {
         mahasiswa_id: id,
-        status: "Disetujui", // ✅ FIX CASE (INI KUNCI UTAMA)
+        status: "Disetujui", // ✅ case-sensitive fix
       },
       include: [
         {
@@ -509,18 +509,32 @@ export const getMahasiswaKegiatan = async (req, res) => {
       order: [["tanggal_pelaksanaan", "DESC"]],
     });
 
+    // =========================
+    // 🔥 FORMAT DATA (FIX UTAMA)
+    // =========================
     const formatData = kegiatan.map((item) => ({
       id: item.id,
+
       kode: item.masterPoin?.kode_keg || "",
+
       nama_kegiatan:
         item.masterPoin?.nama_kegiatan ||
         item.masterPoin?.jenis_kegiatan ||
         item.rincian_acara ||
         "-",
+
+      // 🔥 INI YANG KEMARIN HILANG
+      posisi: item.masterPoin?.posisi || "-",
+      jenis: item.masterPoin?.jenis_kegiatan || "-",
+      tingkat: item.tingkat || "-",
+
       tanggal: item.tanggal_pelaksanaan,
       poin: Number(item.poin) || 0,
     }));
 
+    // =========================
+    // 🔥 KATEGORISASI
+    // =========================
     const ORGANISASI_PREFIX = [
       "BEM",
       "UKM",
@@ -544,7 +558,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
 
     return res.json({
       message: "OK",
-      data: formatData, // 🔥 INI DIPAKAI FE
+      data: formatData,
       organisasi,
       prestasi,
     });
@@ -555,6 +569,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
     });
   }
 };
+
 
 export const importMahasiswaExcel = async (req, res) => {
   try {
