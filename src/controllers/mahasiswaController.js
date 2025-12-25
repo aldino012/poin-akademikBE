@@ -824,17 +824,30 @@ export const streamFotoMahasiswa = async (req, res) => {
 
     const { stream, headers } = await streamFileFromDrive(fileId);
 
-    // Header aman agar <img> bisa render
-    res.setHeader(
-      "Content-Type",
-      headers?.["content-type"] || "image/jpeg"
-    );
-    res.setHeader("Cache-Control", "private, max-age=3600");
+    // ===============================
+    // 🔥 HEADER PENTING (ANTI CACHE)
+    // ===============================
+    res.setHeader("Content-Type", headers?.["content-type"] || "image/jpeg");
 
+    // ⛔ MATIKAN CACHE TOTAL
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate"
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    // (opsional) untuk proxy / CDN
+    res.setHeader("Surrogate-Control", "no-store");
+
+    // ===============================
+    // STREAM FILE
+    // ===============================
     stream.pipe(res);
   } catch (error) {
     console.error("❌ Stream foto gagal:", error.message);
     res.status(404).end();
   }
 };
+
 
