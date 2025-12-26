@@ -3,6 +3,7 @@ import User from "../models/userModel.js";
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
 import { generateCVPdf } from "../utils/puppeteerCV.js";
+import sequelize from "../config/db.js";
 
 import { google } from "googleapis";
 import XLSX from "xlsx";
