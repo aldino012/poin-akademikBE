@@ -28,12 +28,22 @@ import {
 // ======================================================
 // ✅ GET SEMUA MAHASISWA (fix normalisasi angka)
 // ======================================================
+
 export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
       order: [
-        ["total_poin", "DESC"], // 🔥 PRIORITAS: poin tertinggi di atas
-        ["order_index", "ASC"], // 🔒 fallback agar urutan stabil
+        // 1️⃣ Mahasiswa yang punya poin (>0) di atas
+        [
+          sequelize.literal("CASE WHEN total_poin > 0 THEN 0 ELSE 1 END"),
+          "ASC",
+        ],
+
+        // 2️⃣ Poin terbesar ke terkecil
+        ["total_poin", "DESC"],
+
+        // 3️⃣ Kalau poin sama (termasuk sama-sama 0), urut nama
+        ["nama_mhs", "ASC"],
       ],
     });
 
@@ -57,9 +67,6 @@ export const getAllMahasiswa = async (req, res) => {
     res.status(500).json({ message: err.message });
   }
 };
-
-
-
 
 // ======================================================
 // ✅ GET BIODATA MAHASISWA LOGIN
