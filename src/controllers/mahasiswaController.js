@@ -4,10 +4,8 @@ import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
 import { generateCVPdf } from "../utils/puppeteerCV.js";
 import sequelize from "../config/db.js";
-
 import { google } from "googleapis";
 import XLSX from "xlsx";
-
 import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
@@ -34,17 +32,17 @@ export const getAllMahasiswa = async (req, res) => {
   try {
     const raw = await Mahasiswa.findAll({
       order: [
-        // 1️⃣ Mahasiswa yang punya poin (>0) di atas
+        // 1️⃣ Mahasiswa yang punya poin (> 0) di atas
         [
           sequelize.literal("CASE WHEN total_poin > 0 THEN 0 ELSE 1 END"),
           "ASC",
         ],
 
-        // 2️⃣ Poin terbesar ke terkecil
+        // 2️⃣ Ranking poin: terbesar → terkecil
         ["total_poin", "DESC"],
 
-        // 3️⃣ Kalau poin sama (termasuk sama-sama 0), urut nama
-        ["nama_mhs", "ASC"],
+        // 3️⃣ Mahasiswa poin = 0 → urut waktu masuk (data baru di bawah)
+        ["createdAt", "ASC"],
       ],
     });
 
