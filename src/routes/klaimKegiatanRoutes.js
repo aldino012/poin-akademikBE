@@ -87,7 +87,7 @@ router.post(
   "/import",
   authMiddleware,
   adminOnly,
-  upload.single("file_excel"),
+  upload.single("file"), // ⚡ samakan dengan mahasiswa import
   importKlaimKegiatanExcel
 );
 
