@@ -576,7 +576,6 @@ export const getMahasiswaKegiatan = async (req, res) => {
   }
 };
 
-
 export const importMahasiswaExcel = async (req, res) => {
   try {
     // ======================================================
@@ -588,47 +587,85 @@ export const importMahasiswaExcel = async (req, res) => {
 
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet);
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      defval: "", // ⬅️ penting: cegah undefined
+      raw: false,
+    });
 
     if (rows.length === 0) {
       fs.unlink(req.file.path, () => {});
       return res.status(400).json({ message: "File Excel kosong" });
     }
 
+    // ======================================================
+    //  COUNTER & TRACKER
+    // ======================================================
     let inserted = 0;
-    let skipped = 0;
     let failed = 0;
 
-    // optional: catat error baris biar enak debug di FE
+    let skipEmpty = 0;
+    let skipDuplicateExcel = 0;
+    let skipDuplicateDB = 0;
+
     const rowErrors = [];
+
+    // untuk deteksi duplikat DI FILE
+    const seenNim = new Set();
 
     // ======================================================
     //  LOOP DATA EXCEL
     // ======================================================
     for (let i = 0; i < rows.length; i++) {
-      const r = rows[i];
+      const raw = rows[i];
 
-      // ❗ WAJIB ADA NIM & NAMA
-      if (!r.nim || !r.nama_mhs) {
-        skipped++;
+      // ======================================================
+      //  VALIDASI DASAR
+      // ======================================================
+      if (!raw.nim || !raw.nama_mhs) {
+        skipEmpty++;
+        rowErrors.push({
+          rowIndex: i + 2,
+          reason: "NIM atau NAMA kosong",
+        });
         continue;
       }
 
+      const row = normalizeMahasiswaRow(raw);
+
+      // ======================================================
+      //  DUPLIKAT DI FILE EXCEL
+      // ======================================================
+      if (seenNim.has(row.nim)) {
+        skipDuplicateExcel++;
+        rowErrors.push({
+          rowIndex: i + 2,
+          nim: row.nim,
+          reason: "Duplikat NIM di file Excel",
+        });
+        continue;
+      }
+      seenNim.add(row.nim);
+
       try {
         // ======================================================
-        //  NORMALISASI DATA (FILTER)
+        //  DUPLIKAT DI DATABASE
         // ======================================================
-        const row = normalizeMahasiswaRow(r);
+        const exist = await Mahasiswa.findOne({
+          where: { nim: row.nim },
+        });
 
-        // ❗ CEK DUPLIKAT NIM
-        const exist = await Mahasiswa.findOne({ where: { nim: row.nim } });
         if (exist) {
-          skipped++;
+          skipDuplicateDB++;
+          rowErrors.push({
+            rowIndex: i + 2,
+            nim: row.nim,
+            reason: "NIM sudah ada di database",
+          });
           continue;
         }
 
         // ======================================================
-        //  GUARD TANGGAL (🔥 KUNCI HILANGKAN WARNING MOMENT)
+        //  GUARD TANGGAL
         // ======================================================
         const safeTanggalLahir =
           row.tgl_lahir && /^\d{4}-\d{2}-\d{2}$/.test(row.tgl_lahir)
@@ -636,18 +673,18 @@ export const importMahasiswaExcel = async (req, res) => {
             : null;
 
         // ======================================================
-        //  DEFAULT VALUE WAJIB (FIX VALIDATION notEmpty)
+        //  DEFAULT VALUE WAJIB
         // ======================================================
         const safeAlamat =
-          row.alamat && String(row.alamat).trim() !== "" ? row.alamat : "-";
+          row.alamat && row.alamat.trim() !== "" ? row.alamat : "-";
 
         const safeAsalSekolah =
-          row.asal_sekolah && String(row.asal_sekolah).trim() !== ""
+          row.asal_sekolah && row.asal_sekolah.trim() !== ""
             ? row.asal_sekolah
             : "-";
 
         // ======================================================
-        //  SIMPAN DATA MAHASISWA
+        //  SIMPAN MAHASISWA
         // ======================================================
         await Mahasiswa.create({
           nim: row.nim,
@@ -656,14 +693,14 @@ export const importMahasiswaExcel = async (req, res) => {
           angkatan: row.angkatan,
 
           tempat_lahir: row.tempat_lahir || "-",
-          tgl_lahir: safeTanggalLahir, // ✅ SUDAH AMAN
+          tgl_lahir: safeTanggalLahir,
 
-          target_poin: Number(row.target_poin) || 0,
+          target_poin: Number(row.target_poin) || 50,
           total_poin: Number(row.total_poin) || 0,
 
           pekerjaan: row.pekerjaan || "-",
-          alamat: safeAlamat, // ✅ FIX
-          asal_sekolah: safeAsalSekolah, // ✅ FIX
+          alamat: safeAlamat,
+          asal_sekolah: safeAsalSekolah,
           thn_lulus: row.thn_lulus || null,
 
           tlp_saya: row.tlp_saya || null,
@@ -676,9 +713,11 @@ export const importMahasiswaExcel = async (req, res) => {
         });
 
         // ======================================================
-        //  BUAT USER LOGIN (password = NIM)
+        //  BUAT USER LOGIN
         // ======================================================
-        const userExist = await User.findOne({ where: { nim: row.nim } });
+        const userExist = await User.findOne({
+          where: { nim: row.nim },
+        });
 
         if (!userExist) {
           const hashedPassword = await bcrypt.hash(row.nim.toString(), 10);
@@ -693,40 +732,51 @@ export const importMahasiswaExcel = async (req, res) => {
         }
 
         inserted++;
-      } catch (rowErr) {
+      } catch (errRow) {
         failed++;
         rowErrors.push({
-          rowIndex: i + 2, // +2 biar sesuai baris excel (1 header + index mulai 0)
-          nim: r.nim,
-          nama_mhs: r.nama_mhs,
-          error: rowErr?.message || "Unknown error",
+          rowIndex: i + 2,
+          nim: row.nim,
+          reason: "Gagal insert",
+          error: errRow.message,
         });
       }
     }
 
     // ======================================================
-    //  HAPUS FILE SETELAH SELESAI
+    //  HAPUS FILE
     // ======================================================
     fs.unlink(req.file.path, () => {});
 
+    // ======================================================
+    //  RESPONSE KE FE (SUPER JELAS)
+    // ======================================================
     return res.json({
       message: "Import Mahasiswa selesai",
-      total: rows.length,
+      total_row_excel: rows.length,
+
       berhasil: inserted,
-      skip: skipped,
       gagal: failed,
-      errors: rowErrors, // biar FE bisa tampilkan baris mana yang gagal
+
+      skip: {
+        nim_nama_kosong: skipEmpty,
+        duplikat_excel: skipDuplicateExcel,
+        sudah_ada_db: skipDuplicateDB,
+      },
+
+      detail_error: rowErrors,
     });
   } catch (err) {
     console.error("IMPORT ERROR:", err);
 
-    if (req.file && req.file.path) {
+    if (req.file?.path) {
       fs.unlink(req.file.path, () => {});
     }
 
     return res.status(500).json({ message: err.message });
   }
 };
+
 
 
 export const exportMahasiswaExcel = async (req, res) => {
