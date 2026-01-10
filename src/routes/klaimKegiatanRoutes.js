@@ -9,7 +9,6 @@ import {
   deleteKlaim,
   approveKlaim,
   streamBuktiKlaim, // 🔥 STREAM PRIVATE DRIVE
-  importKlaimKegiatanExcel, // 🔥 IMPORT EXCEL
 } from "../controllers/klaimKegiatanController.js";
 
 import {
@@ -19,7 +18,6 @@ import {
 } from "../middleware/authMiddleware.js";
 
 import upload from "../middleware/uploadMiddleware.js";
-import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // 🔹 import excel middleware
 
 const router = express.Router();
 
@@ -79,17 +77,5 @@ router.patch("/:id/status", authMiddleware, adminOnly, approveKlaim);
 // ADMIN: DELETE KLAIM
 // ===============================
 router.delete("/:id", authMiddleware, adminOnly, deleteKlaim);
-
-// ===============================
-// ADMIN: IMPORT EXCEL KLAIM KEGIATAN
-// upload file Excel (.xlsx / .xls)
-// ===============================
-router.post(
-  "/import",
-  authMiddleware,
-  adminOnly,
-  uploadExcel.single("file"), // ⚡ ganti ke uploadExcelMiddleware
-  importKlaimKegiatanExcel
-);
 
 export default router;

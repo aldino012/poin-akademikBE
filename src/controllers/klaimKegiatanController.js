@@ -12,10 +12,6 @@ import {
   streamFileFromDrive,
 } from "../utils/uploadToDrive.js";
 
-// 🔹 Tambahan untuk import Excel
-import XLSX from "xlsx";
-import fs from "fs";
-
 // ===============================
 // CREATE KLAIM (Mahasiswa)
 // ===============================
@@ -446,6 +442,7 @@ export const updateKlaim = async (req, res) => {
   }
 };
 
+
 // ===============================
 // ADMIN APPROVAL
 // ===============================
@@ -593,173 +590,6 @@ export const streamBuktiKlaim = async (req, res) => {
     stream.pipe(res);
   } catch (err) {
     console.error("STREAM BUKTI ERROR:", err);
-    return res.status(500).json({ message: err.message });
-  }
-};
-
-
-export const importKlaimKegiatanExcel = async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: "File Excel belum diupload." });
-    }
-
-    const workbook = XLSX.readFile(req.file.path);
-    const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-
-    if (rows.length === 0) {
-      fs.unlink(req.file.path, () => {});
-      return res.status(400).json({ message: "File Excel kosong." });
-    }
-
-    // Counters
-    let inserted = 0;
-    let failed = 0;
-    let skipEmpty = 0;
-    let skipDuplicateExcel = 0;
-    const rowErrors = [];
-    const seen = new Set();
-
-    // Helper untuk tanggal
-    const parseExcelDate = (excelDate) => {
-      if (!excelDate) return null;
-      const d = new Date(excelDate);
-      if (isNaN(d)) return null;
-      return d.toISOString().split("T")[0]; // YYYY-MM-DD
-    };
-
-    for (let i = 0; i < rows.length; i++) {
-      const raw = rows[i];
-      const rowIndex = i + 2; // Excel row
-
-      const nim = (raw["NIM"] || "").toString().trim();
-      const kode_keg = (raw["Kode Kegiatan"] || "").toString().trim();
-      const statusRaw = (raw["Status"] || "").toString().trim();
-      const tanggalPengajuanRaw = raw["Tanggal Pengajuan"];
-      const tanggalPelaksanaanRaw = raw["Tanggal Pelaksanaan"];
-      const periodePengajuan = raw["Periode Pengajuan (semester)"] || "-";
-      const rincianAcara =
-        raw["Rincian Acara"] || raw["Deskripsi Kegiatan"] || "-";
-      const tingkat = raw["Tingkat"] || "-";
-      const tempat = raw["Tempat"] || "-";
-      const mentor = raw["Mentor"] || null;
-      const narasumber = raw["Narasumber"] || null;
-      const buktiKegiatan = raw["Bukti Kegiatan"] || null;
-      const poinExcel = Number(raw["Poin"]) || 0;
-
-      // Validasi minimal
-      if (!nim || !kode_keg) {
-        skipEmpty++;
-        rowErrors.push({
-          row: rowIndex,
-          reason: "NIM atau Kode Kegiatan kosong",
-        });
-        continue;
-      }
-
-      const uniqKey = `${nim}-${kode_keg}-${tanggalPelaksanaanRaw}`;
-      if (seen.has(uniqKey)) {
-        skipDuplicateExcel++;
-        rowErrors.push({ row: rowIndex, reason: "Duplikat di Excel" });
-        continue;
-      }
-      seen.add(uniqKey);
-
-      try {
-        const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
-        if (!mahasiswa) {
-          rowErrors.push({
-            row: rowIndex,
-            nim,
-            reason: "Mahasiswa tidak ditemukan",
-          });
-          failed++;
-          continue;
-        }
-
-        const masterPoin = await MasterPoin.findOne({ where: { kode_keg } });
-        if (!masterPoin) {
-          rowErrors.push({
-            row: rowIndex,
-            kode_keg,
-            reason: "Master poin tidak ditemukan",
-          });
-          failed++;
-          continue;
-        }
-
-        const existKlaim = await KlaimKegiatan.findOne({
-          where: {
-            mahasiswa_id: mahasiswa.id_mhs,
-            masterpoin_id: masterPoin.id,
-            tanggal_pelaksanaan: parseExcelDate(tanggalPelaksanaanRaw),
-          },
-        });
-
-        if (existKlaim) {
-          rowErrors.push({
-            row: rowIndex,
-            reason: "Klaim sudah ada di database",
-          });
-          failed++;
-          continue;
-        }
-
-        const finalPoin = masterPoin.bobot_poin || poinExcel || 0;
-
-        let normalizedStatus = statusRaw.toLowerCase();
-        if (normalizedStatus === "selesai") normalizedStatus = "disetujui";
-        if (!["disetujui", "revisi", "ditolak"].includes(normalizedStatus)) {
-          normalizedStatus = "revisi";
-        }
-
-        await KlaimKegiatan.create({
-          mahasiswa_id: mahasiswa.id_mhs,
-          masterpoin_id: masterPoin.id,
-          periode_pengajuan: periodePengajuan,
-          tanggal_pengajuan: parseExcelDate(tanggalPengajuanRaw),
-          rincian_acara: rincianAcara,
-          tingkat,
-          tempat,
-          tanggal_pelaksanaan: parseExcelDate(tanggalPelaksanaanRaw),
-          mentor,
-          narasumber,
-          status: normalizedStatus,
-          bukti_file_id: buktiKegiatan,
-          poin: finalPoin,
-        });
-
-        if (normalizedStatus === "disetujui") {
-          await mahasiswa.update({
-            total_poin: Number(mahasiswa.total_poin || 0) + finalPoin,
-          });
-        }
-
-        inserted++;
-      } catch (errRow) {
-        failed++;
-        rowErrors.push({
-          row: rowIndex,
-          reason: "Gagal insert",
-          error: errRow.message,
-        });
-      }
-    }
-
-    fs.unlink(req.file.path, () => {});
-
-    return res.json({
-      message: "Import Klaim Kegiatan selesai",
-      total_row_excel: rows.length,
-      berhasil: inserted,
-      gagal: failed,
-      skip: { nim_kosong: skipEmpty, duplikat_excel: skipDuplicateExcel },
-      detail_error: rowErrors,
-    });
-  } catch (err) {
-    console.error("IMPORT KLAIM ERROR:", err);
-    if (req.file?.path) fs.unlink(req.file.path, () => {});
     return res.status(500).json({ message: err.message });
   }
 };
