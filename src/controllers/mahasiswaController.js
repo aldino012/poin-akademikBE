@@ -588,7 +588,7 @@ export const importMahasiswaExcel = async (req, res) => {
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     const rows = XLSX.utils.sheet_to_json(sheet, {
-      defval: "", // ⬅️ penting: cegah undefined
+      defval: "",
       raw: false,
     });
 
@@ -598,7 +598,7 @@ export const importMahasiswaExcel = async (req, res) => {
     }
 
     // ======================================================
-    //  COUNTER & TRACKER
+    //  COUNTER
     // ======================================================
     let inserted = 0;
     let failed = 0;
@@ -608,24 +608,22 @@ export const importMahasiswaExcel = async (req, res) => {
     let skipDuplicateDB = 0;
 
     const rowErrors = [];
-
-    // untuk deteksi duplikat DI FILE
     const seenNim = new Set();
 
     // ======================================================
-    //  LOOP DATA EXCEL
+    //  LOOP DATA
     // ======================================================
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
 
       // ======================================================
-      //  VALIDASI DASAR
+      //  VALIDASI FATAL (WAJIB)
       // ======================================================
       if (!raw.nim || !raw.nama_mhs) {
         skipEmpty++;
         rowErrors.push({
           rowIndex: i + 2,
-          reason: "NIM atau NAMA kosong",
+          reason: "NIM atau Nama kosong",
         });
         continue;
       }
@@ -633,7 +631,7 @@ export const importMahasiswaExcel = async (req, res) => {
       const row = normalizeMahasiswaRow(raw);
 
       // ======================================================
-      //  DUPLIKAT DI FILE EXCEL
+      //  DUPLIKAT DI FILE
       // ======================================================
       if (seenNim.has(row.nim)) {
         skipDuplicateExcel++;
@@ -665,16 +663,14 @@ export const importMahasiswaExcel = async (req, res) => {
         }
 
         // ======================================================
-        //  GUARD TANGGAL
+        //  NORMALISASI DATA (KUNCI MASUK 600+)
         // ======================================================
-        const safeTanggalLahir =
-          row.tgl_lahir && /^\d{4}-\d{2}-\d{2}$/.test(row.tgl_lahir)
-            ? row.tgl_lahir
-            : null;
 
-        // ======================================================
-        //  DEFAULT VALUE WAJIB
-        // ======================================================
+        // prodi wajib
+        const safeProdi =
+          row.prodi && row.prodi.trim() !== "" ? row.prodi : "BELUM DIISI";
+
+        // alamat & asal sekolah (notEmpty di model)
         const safeAlamat =
           row.alamat && row.alamat.trim() !== "" ? row.alamat : "-";
 
@@ -683,14 +679,40 @@ export const importMahasiswaExcel = async (req, res) => {
             ? row.asal_sekolah
             : "-";
 
+        // angkatan → ambil 4 digit pertama
+        const safeAngkatan =
+          row.angkatan && /\d{4}/.test(row.angkatan)
+            ? row.angkatan.match(/\d{4}/)[0]
+            : null;
+
+        // tahun lulus → optional
+        const safeThnLulus =
+          row.thn_lulus && /\d{4}/.test(row.thn_lulus)
+            ? row.thn_lulus.match(/\d{4}/)[0]
+            : null;
+
+        // jenis kelamin → ENUM L / P
+        const jk = row.jenis_kelamin?.toString().toLowerCase();
+        const safeJenisKelamin = jk?.startsWith("l")
+          ? "L"
+          : jk?.startsWith("p")
+          ? "P"
+          : null;
+
+        // tanggal lahir
+        const safeTanggalLahir =
+          row.tgl_lahir && /^\d{4}-\d{2}-\d{2}$/.test(row.tgl_lahir)
+            ? row.tgl_lahir
+            : null;
+
         // ======================================================
-        //  SIMPAN MAHASISWA
+        //  INSERT MAHASISWA
         // ======================================================
         await Mahasiswa.create({
           nim: row.nim,
           nama_mhs: row.nama_mhs,
-          prodi: row.prodi,
-          angkatan: row.angkatan,
+          prodi: safeProdi,
+          angkatan: safeAngkatan,
 
           tempat_lahir: row.tempat_lahir || "-",
           tgl_lahir: safeTanggalLahir,
@@ -701,19 +723,19 @@ export const importMahasiswaExcel = async (req, res) => {
           pekerjaan: row.pekerjaan || "-",
           alamat: safeAlamat,
           asal_sekolah: safeAsalSekolah,
-          thn_lulus: row.thn_lulus || null,
+          thn_lulus: safeThnLulus,
 
           tlp_saya: row.tlp_saya || null,
           tlp_rumah: row.tlp_rumah || null,
 
           email: row.email || null,
-          jenis_kelamin: row.jenis_kelamin || null,
+          jenis_kelamin: safeJenisKelamin,
 
-          foto: row.foto || null,
+          foto_file_id: row.foto || null,
         });
 
         // ======================================================
-        //  BUAT USER LOGIN
+        //  USER LOGIN
         // ======================================================
         const userExist = await User.findOne({
           where: { nim: row.nim },
@@ -744,26 +766,23 @@ export const importMahasiswaExcel = async (req, res) => {
     }
 
     // ======================================================
-    //  HAPUS FILE
+    //  CLEANUP FILE
     // ======================================================
     fs.unlink(req.file.path, () => {});
 
     // ======================================================
-    //  RESPONSE KE FE (SUPER JELAS)
+    //  RESPONSE
     // ======================================================
     return res.json({
       message: "Import Mahasiswa selesai",
       total_row_excel: rows.length,
-
       berhasil: inserted,
       gagal: failed,
-
       skip: {
         nim_nama_kosong: skipEmpty,
         duplikat_excel: skipDuplicateExcel,
         sudah_ada_db: skipDuplicateDB,
       },
-
       detail_error: rowErrors,
     });
   } catch (err) {
@@ -776,7 +795,6 @@ export const importMahasiswaExcel = async (req, res) => {
     return res.status(500).json({ message: err.message });
   }
 };
-
 
 
 export const exportMahasiswaExcel = async (req, res) => {
