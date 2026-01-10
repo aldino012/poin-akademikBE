@@ -9,6 +9,7 @@ import {
   deleteKlaim,
   approveKlaim,
   streamBuktiKlaim, // 🔥 STREAM PRIVATE DRIVE
+  importKlaimKegiatanExcel, // 🔥 IMPORT EXCEL
 } from "../controllers/klaimKegiatanController.js";
 
 import {
@@ -77,5 +78,17 @@ router.patch("/:id/status", authMiddleware, adminOnly, approveKlaim);
 // ADMIN: DELETE KLAIM
 // ===============================
 router.delete("/:id", authMiddleware, adminOnly, deleteKlaim);
+
+// ===============================
+// ADMIN: IMPORT EXCEL KLAIM KEGIATAN
+// upload file Excel (.xlsx)
+// ===============================
+router.post(
+  "/import",
+  authMiddleware,
+  adminOnly,
+  upload.single("file_excel"),
+  importKlaimKegiatanExcel
+);
 
 export default router;
