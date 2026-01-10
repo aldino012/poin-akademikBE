@@ -19,6 +19,7 @@ import {
 } from "../middleware/authMiddleware.js";
 
 import upload from "../middleware/uploadMiddleware.js";
+import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // 🔹 import excel middleware
 
 const router = express.Router();
 
@@ -81,13 +82,13 @@ router.delete("/:id", authMiddleware, adminOnly, deleteKlaim);
 
 // ===============================
 // ADMIN: IMPORT EXCEL KLAIM KEGIATAN
-// upload file Excel (.xlsx)
+// upload file Excel (.xlsx / .xls)
 // ===============================
 router.post(
   "/import",
   authMiddleware,
   adminOnly,
-  upload.single("file"), // ⚡ samakan dengan mahasiswa import
+  uploadExcel.single("file"), // ⚡ ganti ke uploadExcelMiddleware
   importKlaimKegiatanExcel
 );
 
