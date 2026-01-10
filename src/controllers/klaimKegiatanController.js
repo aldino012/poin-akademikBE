@@ -2,7 +2,6 @@
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import Mahasiswa from "../models/mahasiswaModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
-import { normalizeMahasiswaRow } from "../controllers/FungsiFilter.js";
 
 import {
   uploadToDrive,
@@ -601,7 +600,6 @@ export const streamBuktiKlaim = async (req, res) => {
 
 export const importKlaimKegiatanExcel = async (req, res) => {
   try {
-    // 1️⃣ Validasi file
     if (!req.file) {
       return res.status(400).json({ message: "File Excel belum diupload." });
     }
@@ -615,21 +613,26 @@ export const importKlaimKegiatanExcel = async (req, res) => {
       return res.status(400).json({ message: "File Excel kosong." });
     }
 
-    // 2️⃣ Counters
+    // Counters
     let inserted = 0;
     let failed = 0;
     let skipEmpty = 0;
     let skipDuplicateExcel = 0;
-    let skipDuplicateDB = 0;
     const rowErrors = [];
     const seen = new Set();
 
-    // 3️⃣ Loop rows
+    // Helper untuk tanggal
+    const parseExcelDate = (excelDate) => {
+      if (!excelDate) return null;
+      const d = new Date(excelDate);
+      if (isNaN(d)) return null;
+      return d.toISOString().split("T")[0]; // YYYY-MM-DD
+    };
+
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
       const rowIndex = i + 2; // Excel row
 
-      // 🔹 Normalisasi data
       const nim = (raw["NIM"] || "").toString().trim();
       const kode_keg = (raw["Kode Kegiatan"] || "").toString().trim();
       const statusRaw = (raw["Status"] || "").toString().trim();
@@ -645,7 +648,7 @@ export const importKlaimKegiatanExcel = async (req, res) => {
       const buktiKegiatan = raw["Bukti Kegiatan"] || null;
       const poinExcel = Number(raw["Poin"]) || 0;
 
-      // 🔹 Validasi minimal
+      // Validasi minimal
       if (!nim || !kode_keg) {
         skipEmpty++;
         rowErrors.push({
@@ -664,70 +667,62 @@ export const importKlaimKegiatanExcel = async (req, res) => {
       seen.add(uniqKey);
 
       try {
-        // 🔹 Cari mahasiswa
         const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
         if (!mahasiswa) {
-          skipDuplicateDB++;
           rowErrors.push({
             row: rowIndex,
             nim,
             reason: "Mahasiswa tidak ditemukan",
           });
+          failed++;
           continue;
         }
 
-        // 🔹 Cari master poin
         const masterPoin = await MasterPoin.findOne({ where: { kode_keg } });
         if (!masterPoin) {
-          skipDuplicateDB++;
           rowErrors.push({
             row: rowIndex,
             kode_keg,
             reason: "Master poin tidak ditemukan",
           });
+          failed++;
           continue;
         }
 
-        // 🔹 Cek duplikat klaim di DB
         const existKlaim = await KlaimKegiatan.findOne({
           where: {
             mahasiswa_id: mahasiswa.id_mhs,
             masterpoin_id: masterPoin.id,
-            tanggal_pelaksanaan: tanggalPelaksanaanRaw,
+            tanggal_pelaksanaan: parseExcelDate(tanggalPelaksanaanRaw),
           },
         });
 
         if (existKlaim) {
-          skipDuplicateDB++;
           rowErrors.push({
             row: rowIndex,
-            nim,
-            kode_keg,
             reason: "Klaim sudah ada di database",
           });
+          failed++;
           continue;
         }
 
-        // 🔹 Hitung poin final dari MasterPoin
         const finalPoin = masterPoin.bobot_poin || poinExcel || 0;
 
-        // 🔹 Normalisasi status
         let normalizedStatus = statusRaw.toLowerCase();
         if (normalizedStatus === "selesai") normalizedStatus = "disetujui";
         if (!["disetujui", "revisi", "ditolak"].includes(normalizedStatus)) {
           normalizedStatus = "revisi";
         }
 
-        // 🔹 Simpan klaim
         await KlaimKegiatan.create({
           mahasiswa_id: mahasiswa.id_mhs,
           masterpoin_id: masterPoin.id,
           periode_pengajuan: periodePengajuan,
-          tanggal_pengajuan: tanggalPengajuanRaw || null,
+          tanggal_pengajuan: parseExcelDate(tanggalPengajuanRaw),
           rincian_acara: rincianAcara,
           tingkat,
           tempat,
-          tanggal_pelaksanaan: tanggalPelaksanaanRaw || null,
+          tanggal_pelaksanaan: parseExcelDate(tanggalPelaksanaanRaw),
           mentor,
           narasumber,
           status: normalizedStatus,
@@ -735,7 +730,6 @@ export const importKlaimKegiatanExcel = async (req, res) => {
           poin: finalPoin,
         });
 
-        // 🔹 Jika status = Disetujui, update total poin mahasiswa
         if (normalizedStatus === "disetujui") {
           await mahasiswa.update({
             total_poin: Number(mahasiswa.total_poin || 0) + finalPoin,
@@ -753,20 +747,14 @@ export const importKlaimKegiatanExcel = async (req, res) => {
       }
     }
 
-    // 🔹 Cleanup file
     fs.unlink(req.file.path, () => {});
 
-    // 🔹 Response
     return res.json({
       message: "Import Klaim Kegiatan selesai",
       total_row_excel: rows.length,
       berhasil: inserted,
       gagal: failed,
-      skip: {
-        nim_kosong: skipEmpty,
-        duplikat_excel: skipDuplicateExcel,
-        sudah_ada_db: skipDuplicateDB,
-      },
+      skip: { nim_kosong: skipEmpty, duplikat_excel: skipDuplicateExcel },
       detail_error: rowErrors,
     });
   } catch (err) {
