@@ -4,6 +4,7 @@ import Mahasiswa from "../models/mahasiswaModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
 import db from "../config/db.js";
 import XLSX from "xlsx";
+import { Op } from "sequelize";
 
 import {
   uploadToDrive,
@@ -646,15 +647,14 @@ const parseTanggalIndonesia = (value) => {
 export const importKlaimExcel = async (req, res) => {
   console.log("\n================= [IMPORT EXCEL] =================");
 
-  // ===============================
-  // CEK FILE
-  // ===============================
   if (!req.file || !req.file.buffer) {
-    console.error("[IMPORT] ❌ File / buffer tidak ditemukan");
     return res.status(400).json({
       message: "File Excel wajib diupload",
     });
   }
+
+  const normalize = (str) =>
+    String(str).replace(/\s+/g, " ").trim().toLowerCase();
 
   const success = [];
   const failed = [];
@@ -664,49 +664,31 @@ export const importKlaimExcel = async (req, res) => {
     // BACA EXCEL
     // ===============================
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
-    const sheetName = workbook.SheetNames[0];
-    const sheet = workbook.Sheets[sheetName];
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
-    const rows = XLSX.utils.sheet_to_json(sheet, {
+    const rowsRaw = XLSX.utils.sheet_to_json(sheet, {
       defval: "",
       raw: true,
     });
 
-    console.log("[IMPORT] total rows:", rows.length);
+    // 🔥 FILTER BARIS VALID (INI PENTING)
+    const rows = rowsRaw.filter(
+      (row) => row["NIM"] && String(row["NIM"]).trim() !== ""
+    );
 
-    if (!rows.length) {
-      throw new Error("File Excel kosong");
-    }
+    console.log("[IMPORT] total rows valid:", rows.length);
 
-    // ===============================
-    // LOOP PER ROW
-    // ===============================
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const excelRow = i + 2; // header = row 1
-
-      // ===============================
-      // SKIP BARIS KOSONG
-      // ===============================
-      if (!row["NIM"]) {
-        console.warn(`[ROW ${excelRow}] ⏭ SKIP (NIM kosong)`);
-        continue;
-      }
-
+      const excelRow = i + 2;
       const transaction = await db.transaction();
 
       try {
-        console.log(`\n[ROW ${excelRow}] ===============================`);
-
         // ===============================
-        // CAST NIM (WAJIB)
+        // NIM
         // ===============================
         const nim = String(row["NIM"]).trim();
-        console.log("[ROW] NIM:", nim);
 
-        // ===============================
-        // CARI MAHASISWA
-        // ===============================
         const mahasiswa = await Mahasiswa.findOne({
           where: { nim },
           transaction,
@@ -717,26 +699,36 @@ export const importKlaimExcel = async (req, res) => {
         }
 
         // ===============================
-        // PARSE KODE KEGIATAN
+        // KODE KEGIATAN
         // ===============================
         const kodeRaw = row["Kode Kegiatan"];
         if (!kodeRaw || !kodeRaw.includes(" - ")) {
           throw new Error("Format Kode Kegiatan tidak valid");
         }
 
-        const [kode_keg, posisi] = kodeRaw.split(" - ").map((v) => v.trim());
+        const [kodeRawDb, posisiRawDb] = kodeRaw.split(" - ");
+
+        const kode_keg = normalize(kodeRawDb);
+        const posisi = normalize(posisiRawDb);
 
         const masterpoin = await MasterPoin.findOne({
-          where: { kode_keg, posisi },
+          where: {
+            [Op.and]: [
+              db.where(db.fn("lower", db.col("kode_keg")), kode_keg),
+              db.where(db.fn("lower", db.col("posisi")), posisi),
+            ],
+          },
           transaction,
         });
 
         if (!masterpoin) {
-          throw new Error(`MasterPoin ${kode_keg} - ${posisi} tidak ditemukan`);
+          throw new Error(
+            `MasterPoin ${kodeRawDb.trim()} - ${posisiRawDb.trim()} tidak ditemukan`
+          );
         }
 
         // ===============================
-        // PARSE TANGGAL
+        // TANGGAL
         // ===============================
         const tanggal_pengajuan = parseTanggalIndonesia(
           row["Tanggal Pengajuan"]
@@ -773,7 +765,7 @@ export const importKlaimExcel = async (req, res) => {
         );
 
         // ===============================
-        // UPDATE TOTAL POIN MAHASISWA
+        // UPDATE TOTAL POIN
         // ===============================
         mahasiswa.total_poin =
           (mahasiswa.total_poin || 0) + masterpoin.bobot_poin;
@@ -781,26 +773,16 @@ export const importKlaimExcel = async (req, res) => {
         await mahasiswa.save({ transaction });
 
         await transaction.commit();
-
-        console.log(`[ROW ${excelRow}] ✅ SUCCESS`);
         success.push(nim);
-      } catch (rowError) {
+      } catch (err) {
         await transaction.rollback();
-
-        console.error(`[ROW ${excelRow}] ❌ ERROR:`, rowError.message);
-
         failed.push({
           row: excelRow,
-          nim: row["NIM"] ? String(row["NIM"]).trim() : null,
-          error: rowError.message,
+          nim: row["NIM"],
+          error: err.message,
         });
       }
     }
-
-    console.log("\n[IMPORT] FINISHED");
-    console.log("[IMPORT] success:", success.length);
-    console.log("[IMPORT] failed:", failed.length);
-    console.log("===============================================\n");
 
     return res.json({
       success: true,
@@ -810,10 +792,6 @@ export const importKlaimExcel = async (req, res) => {
     });
   } catch (err) {
     console.error("IMPORT EXCEL FATAL ERROR:", err);
-    console.log("===============================================\n");
-
-    return res.status(500).json({
-      message: err.message,
-    });
+    return res.status(500).json({ message: err.message });
   }
 };
