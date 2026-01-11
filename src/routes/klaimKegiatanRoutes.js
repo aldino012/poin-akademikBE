@@ -66,7 +66,7 @@ router.post(
   "/import",
   authMiddleware,
   adminOnly,
-  uploadExcel.single("excel_file"), // 🔥 Menggunakan middleware Anda
+  uploadExcel.single("file"), // 🔥 Menggunakan middleware Anda
   importKlaimFromExcel
 );
 
