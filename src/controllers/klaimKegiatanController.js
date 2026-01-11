@@ -596,6 +596,18 @@ export const streamBuktiKlaim = async (req, res) => {
   }
 };
 
+/**
+ * Helper ambil value dari berbagai kemungkinan header
+ */
+const getValue = (row, keys) => {
+  for (const key of keys) {
+    if (row[key] !== undefined && row[key] !== null) {
+      return String(row[key]).trim();
+    }
+  }
+  return "";
+};
+
 export const importKlaimKegiatanExcel = async (req, res) => {
   try {
     // ===============================
@@ -607,9 +619,13 @@ export const importKlaimKegiatanExcel = async (req, res) => {
 
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
-    if (!rows.length) {
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (rows.length === 0) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ message: "File Excel kosong" });
     }
@@ -617,145 +633,183 @@ export const importKlaimKegiatanExcel = async (req, res) => {
     // ===============================
     // 2. COUNTER
     // ===============================
-    let inserted = 0;
-    let skip = {
-      nim_kosong: 0,
-      mahasiswa_tidak_ada: 0,
-      master_poin_tidak_ada: 0,
-      duplikat: 0,
-    };
+    let berhasil = 0;
+    let gagal = 0;
+
+    let skipNimKosong = 0;
+    let skipMahasiswa = 0;
+    let skipMasterPoin = 0;
+    let skipDuplikat = 0;
 
     const errors = [];
+    const seen = new Set();
 
     // ===============================
-    // 3. LOOP EXCEL
+    // 3. LOOP DATA
     // ===============================
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const rowIndex = i + 2;
+      const excelRow = i + 2;
 
-      const nim = String(row["NIM"] || "").trim();
-      const jenisKegiatan = String(row["Jenis Kegiatan"] || "").trim();
-      const posisi = String(row["Posisi"] || "").trim();
-      const statusRaw = String(row["Status"] || "revisi").toLowerCase();
-      const tanggalPelaksanaan = row["Tanggal Pelaksanaan"] || null;
+      // 🔹 AMBIL DATA EXCEL (FLEKSIBEL)
+      const nim = getValue(row, ["NIM", "nim", "Nim"]);
+      const kodeKeg = getValue(row, [
+        "Kode Kegiatan",
+        "kode_keg",
+        "Kode",
+        "Kode Kegiatan SKP",
+      ]);
+
+      const tanggalPelaksanaan = getValue(row, [
+        "Tanggal Pelaksanaan",
+        "tanggal_pelaksanaan",
+      ]);
+
+      const periode = getValue(row, ["Periode", "Periode Pengajuan"]) || "-";
+      const rincian =
+        getValue(row, ["Rincian Acara", "Deskripsi"]) || "-";
+      const tingkat = getValue(row, ["Tingkat"]) || "-";
+      const tempat = getValue(row, ["Tempat"]) || "-";
+      const mentor = getValue(row, ["Mentor"]) || null;
+      const narasumber = getValue(row, ["Narasumber"]) || null;
+      const statusRaw = getValue(row, ["Status"]) || "revisi";
 
       // ===============================
-      // VALIDASI MINIMAL
+      // 4. VALIDASI MINIMAL
       // ===============================
-      if (!nim || !jenisKegiatan || !posisi) {
-        skip.nim_kosong++;
+      if (!nim || !kodeKeg) {
+        skipNimKosong++;
         errors.push({
-          row: rowIndex,
-          reason: "NIM / Jenis Kegiatan / Posisi kosong",
+          row: excelRow,
+          reason: "NIM / Kode Kegiatan kosong",
         });
         continue;
       }
 
-      // ===============================
-      // CARI MAHASISWA
-      // ===============================
-      const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
-      if (!mahasiswa) {
-        skip.mahasiswa_tidak_ada++;
-        errors.push({
-          row: rowIndex,
-          nim,
-          reason: "Mahasiswa tidak ditemukan",
-        });
+      const uniqKey = `${nim}-${kodeKeg}-${tanggalPelaksanaan}`;
+      if (seen.has(uniqKey)) {
+        skipDuplikat++;
         continue;
       }
+      seen.add(uniqKey);
 
-      // ===============================
-      // CARI MASTER POIN (INI KUNCI)
-      // ===============================
-      const masterPoin = await MasterPoin.findOne({
-        where: {
-          jenis_kegiatan: jenisKegiatan,
-          posisi: posisi,
-        },
-      });
+      try {
+        // ===============================
+        // 5. CARI MAHASISWA
+        // ===============================
+        const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
+        if (!mahasiswa) {
+          skipMahasiswa++;
+          errors.push({
+            row: excelRow,
+            nim,
+            reason: "Mahasiswa tidak ditemukan",
+          });
+          continue;
+        }
 
-      if (!masterPoin) {
-        skip.master_poin_tidak_ada++;
-        errors.push({
-          row: rowIndex,
-          jenisKegiatan,
-          posisi,
-          reason: "MasterPoin tidak ditemukan",
+        // ===============================
+        // 6. CARI MASTER POIN (BY kode_keg)
+        // ===============================
+        const masterPoin = await MasterPoin.findOne({
+          where: { kode_keg: kodeKeg },
         });
-        continue;
-      }
 
-      // ===============================
-      // CEK DUPLIKAT KLAIM
-      // ===============================
-      const exist = await KlaimKegiatan.findOne({
-        where: {
+        if (!masterPoin) {
+          skipMasterPoin++;
+          errors.push({
+            row: excelRow,
+            kodeKeg,
+            reason: "Master poin tidak ditemukan",
+          });
+          continue;
+        }
+
+        // ===============================
+        // 7. CEK DUPLIKAT DB
+        // ===============================
+        const exist = await KlaimKegiatan.findOne({
+          where: {
+            mahasiswa_id: mahasiswa.id_mhs,
+            masterpoin_id: masterPoin.id,
+            tanggal_pelaksanaan: tanggalPelaksanaan || null,
+          },
+        });
+
+        if (exist) {
+          skipDuplikat++;
+          continue;
+        }
+
+        // ===============================
+        // 8. NORMALISASI STATUS
+        // ===============================
+        let status = statusRaw.toLowerCase();
+        if (status === "selesai") status = "disetujui";
+        if (!["disetujui", "revisi", "ditolak"].includes(status)) {
+          status = "revisi";
+        }
+
+        // ===============================
+        // 9. INSERT KLAIM
+        // ===============================
+        await KlaimKegiatan.create({
           mahasiswa_id: mahasiswa.id_mhs,
           masterpoin_id: masterPoin.id,
-          tanggal_pelaksanaan: tanggalPelaksanaan,
-        },
-      });
+          periode_pengajuan: periode,
+          tanggal_pengajuan: new Date(),
+          rincian_acara: rincian,
+          tingkat,
+          tempat,
+          tanggal_pelaksanaan: tanggalPelaksanaan || null,
+          mentor,
+          narasumber,
+          status,
+          poin: masterPoin.bobot_poin || 0,
+        });
 
-      if (exist) {
-        skip.duplikat++;
-        continue;
-      }
+        // ===============================
+        // 10. UPDATE TOTAL POIN
+        // ===============================
+        if (status === "disetujui") {
+          await mahasiswa.update({
+            total_poin:
+              Number(mahasiswa.total_poin || 0) +
+              Number(masterPoin.bobot_poin || 0),
+          });
+        }
 
-      // ===============================
-      // NORMALISASI STATUS
-      // ===============================
-      let status = "revisi";
-      if (["disetujui", "ditolak", "revisi"].includes(statusRaw)) {
-        status = statusRaw;
-      }
-
-      // ===============================
-      // INSERT KLAIM
-      // ===============================
-      await KlaimKegiatan.create({
-        mahasiswa_id: mahasiswa.id_mhs,
-        masterpoin_id: masterPoin.id,
-        periode_pengajuan: row["Periode Pengajuan"] || "-",
-        tanggal_pengajuan: row["Tanggal Pengajuan"] || null,
-        tanggal_pelaksanaan: tanggalPelaksanaan,
-        rincian_acara: row["Rincian Acara"] || "-",
-        tingkat: row["Tingkat"] || "-",
-        tempat: row["Tempat"] || "-",
-        mentor: row["Mentor"] || null,
-        narasumber: row["Narasumber"] || null,
-        status,
-        poin: masterPoin.bobot_poin,
-      });
-
-      // ===============================
-      // UPDATE TOTAL POIN
-      // ===============================
-      if (status === "disetujui") {
-        await mahasiswa.update({
-          total_poin: Number(mahasiswa.total_poin || 0) + masterPoin.bobot_poin,
+        berhasil++;
+      } catch (errRow) {
+        gagal++;
+        errors.push({
+          row: excelRow,
+          error: errRow.message,
         });
       }
-
-      inserted++;
     }
 
     fs.unlinkSync(req.file.path);
 
     // ===============================
-    // RESPONSE
+    // 11. RESPONSE
     // ===============================
     return res.json({
       message: "Import klaim kegiatan berhasil",
       total_excel: rows.length,
-      berhasil: inserted,
-      skip,
+      berhasil,
+      gagal,
+      skip: {
+        nim_kosong: skipNimKosong,
+        mahasiswa_tidak_ada: skipMahasiswa,
+        master_poin_tidak_ada: skipMasterPoin,
+        duplikat: skipDuplikat,
+      },
       errors,
     });
   } catch (err) {
-    console.error("IMPORT ERROR:", err);
     if (req.file?.path) fs.unlinkSync(req.file.path);
+    console.error("IMPORT ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
