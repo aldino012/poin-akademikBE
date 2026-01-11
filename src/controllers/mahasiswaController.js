@@ -577,16 +577,19 @@ export const getMahasiswaKegiatan = async (req, res) => {
 };
 
 export const importMahasiswaExcel = async (req, res) => {
+  console.log("\n================= [IMPORT MAHASISWA EXCEL] =================");
+
   try {
     // ======================================================
-    //  VALIDASI FILE
+    // VALIDASI FILE
     // ======================================================
     if (!req.file || !req.file.buffer) {
+      console.error("[IMPORT] ❌ File / buffer tidak ditemukan");
       return res.status(400).json({ message: "File Excel belum diupload" });
     }
 
     // ======================================================
-    //  BACA EXCEL DARI BUFFER (FIX UTAMA)
+    // BACA EXCEL DARI BUFFER
     // ======================================================
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
@@ -596,11 +599,14 @@ export const importMahasiswaExcel = async (req, res) => {
     });
 
     if (rows.length === 0) {
+      console.error("[IMPORT] ❌ File Excel kosong");
       return res.status(400).json({ message: "File Excel kosong" });
     }
 
+    console.log(`[IMPORT] 📄 Total row excel: ${rows.length}`);
+
     // ======================================================
-    //  COUNTER
+    // COUNTER
     // ======================================================
     let inserted = 0;
     let failed = 0;
@@ -613,42 +619,55 @@ export const importMahasiswaExcel = async (req, res) => {
     const seenNim = new Set();
 
     // ======================================================
-    //  LOOP DATA
+    // LOOP DATA
     // ======================================================
     for (let i = 0; i < rows.length; i++) {
       const raw = rows[i];
+      const excelRow = i + 2;
 
-      // ======================================================
-      //  VALIDASI FATAL (WAJIB)
-      // ======================================================
-      if (!raw.nim || !raw.nama_mhs) {
-        skipEmpty++;
-        rowErrors.push({
-          rowIndex: i + 2,
-          reason: "NIM atau Nama kosong",
-        });
-        continue;
-      }
-
-      const row = normalizeMahasiswaRow(raw);
-
-      // ======================================================
-      //  DUPLIKAT DI FILE
-      // ======================================================
-      if (seenNim.has(row.nim)) {
-        skipDuplicateExcel++;
-        rowErrors.push({
-          rowIndex: i + 2,
-          nim: row.nim,
-          reason: "Duplikat NIM di file Excel",
-        });
-        continue;
-      }
-      seenNim.add(row.nim);
+      let nim = raw.nim ? String(raw.nim).trim() : null;
+      let nama = raw.nama_mhs || "-";
 
       try {
+        console.log(`\n[ROW ${excelRow}] ▶️ Mulai proses`);
+        console.log(`[ROW ${excelRow}] NIM: ${nim || "-"}`);
+        console.log(`[ROW ${excelRow}] Nama: ${nama}`);
+
         // ======================================================
-        //  DUPLIKAT DI DATABASE
+        // VALIDASI WAJIB
+        // ======================================================
+        if (!nim || !raw.nama_mhs) {
+          skipEmpty++;
+          console.warn(`[ROW ${excelRow}] ⏭ SKIP → NIM atau Nama kosong`);
+          rowErrors.push({
+            rowIndex: excelRow,
+            nim,
+            reason: "NIM atau Nama kosong",
+          });
+          continue;
+        }
+
+        const row = normalizeMahasiswaRow(raw);
+
+        // ======================================================
+        // DUPLIKAT DI FILE
+        // ======================================================
+        if (seenNim.has(row.nim)) {
+          skipDuplicateExcel++;
+          console.warn(
+            `[ROW ${excelRow}] ⏭ SKIP → Duplikat NIM di file (${row.nim})`
+          );
+          rowErrors.push({
+            rowIndex: excelRow,
+            nim: row.nim,
+            reason: "Duplikat NIM di file Excel",
+          });
+          continue;
+        }
+        seenNim.add(row.nim);
+
+        // ======================================================
+        // DUPLIKAT DI DATABASE
         // ======================================================
         const exist = await Mahasiswa.findOne({
           where: { nim: row.nim },
@@ -656,8 +675,11 @@ export const importMahasiswaExcel = async (req, res) => {
 
         if (exist) {
           skipDuplicateDB++;
+          console.warn(
+            `[ROW ${excelRow}] ⏭ SKIP → NIM ${row.nim} sudah ada di database`
+          );
           rowErrors.push({
-            rowIndex: i + 2,
+            rowIndex: excelRow,
             nim: row.nim,
             reason: "NIM sudah ada di database",
           });
@@ -665,7 +687,7 @@ export const importMahasiswaExcel = async (req, res) => {
         }
 
         // ======================================================
-        //  NORMALISASI DATA
+        // NORMALISASI DATA
         // ======================================================
         const safeProdi =
           row.prodi && row.prodi.trim() !== "" ? row.prodi : "BELUM DIISI";
@@ -701,7 +723,7 @@ export const importMahasiswaExcel = async (req, res) => {
             : null;
 
         // ======================================================
-        //  INSERT MAHASISWA
+        // INSERT MAHASISWA
         // ======================================================
         await Mahasiswa.create({
           nim: row.nim,
@@ -724,7 +746,7 @@ export const importMahasiswaExcel = async (req, res) => {
         });
 
         // ======================================================
-        //  USER LOGIN
+        // USER LOGIN
         // ======================================================
         const userExist = await User.findOne({
           where: { nim: row.nim },
@@ -743,11 +765,19 @@ export const importMahasiswaExcel = async (req, res) => {
         }
 
         inserted++;
+        console.log(
+          `[ROW ${excelRow}] ✅ SUCCESS → ${row.nama_mhs} (${row.nim})`
+        );
       } catch (errRow) {
         failed++;
+
+        console.error(`[ROW ${excelRow}] ❌ FAILED → ${nim || "-"} | ${nama}`);
+        console.error(`[ROW ${excelRow}] ❌ REASON: ${errRow.message}`);
+
         rowErrors.push({
-          rowIndex: i + 2,
-          nim: row.nim,
+          rowIndex: excelRow,
+          nim,
+          nama,
           reason: "Gagal insert",
           error: errRow.message,
         });
@@ -755,7 +785,30 @@ export const importMahasiswaExcel = async (req, res) => {
     }
 
     // ======================================================
-    //  RESPONSE
+    // SUMMARY LOG
+    // ======================================================
+    console.log("\n================= [IMPORT RESULT] =================");
+    console.log(`✅ Inserted : ${inserted}`);
+    console.log(`❌ Failed   : ${failed}`);
+    console.log(`⏭ Skip Empty        : ${skipEmpty}`);
+    console.log(`⏭ Skip Duplikat Excel: ${skipDuplicateExcel}`);
+    console.log(`⏭ Skip Duplikat DB   : ${skipDuplicateDB}`);
+
+    if (rowErrors.length > 0) {
+      console.log("❌ DETAIL ERROR:");
+      rowErrors.forEach((e) => {
+        console.log(
+          `   - Row ${e.rowIndex} | NIM ${e.nim || "-"} | ${e.nama || "-"} → ${
+            e.reason || e.error
+          }`
+        );
+      });
+    }
+
+    console.log("==================================================\n");
+
+    // ======================================================
+    // RESPONSE
     // ======================================================
     return res.json({
       message: "Import Mahasiswa selesai",
@@ -770,10 +823,11 @@ export const importMahasiswaExcel = async (req, res) => {
       detail_error: rowErrors,
     });
   } catch (err) {
-    console.error("IMPORT ERROR:", err);
+    console.error("💥 IMPORT MAHASISWA FATAL ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
+
 
 export const exportMahasiswaExcel = async (req, res) => {
   try {

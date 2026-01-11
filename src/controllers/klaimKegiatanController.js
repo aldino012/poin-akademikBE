@@ -663,9 +663,10 @@ const parseTanggalIndonesia = (value) => {
 // IMPORT KLAIM DARI EXCEL (ADMIN)
 // ===============================
 export const importKlaimExcel = async (req, res) => {
-  console.log("\n================= [IMPORT EXCEL] =================");
+  console.log("\n================= [IMPORT KLAIM EXCEL] =================");
 
   if (!req.file || !req.file.buffer) {
+    console.error("[IMPORT] ❌ File / buffer tidak ditemukan");
     return res.status(400).json({
       message: "File Excel wajib diupload",
     });
@@ -686,23 +687,29 @@ export const importKlaimExcel = async (req, res) => {
       raw: true,
     });
 
-    // 🔥 FILTER HANYA BARIS YANG ADA NIM
+    // 🔥 FILTER BARIS YANG ADA NIM
     const rows = rowsRaw.filter(
       (row) => row["NIM"] && String(row["NIM"]).trim() !== ""
     );
 
-    console.log("[IMPORT] total rows valid:", rows.length);
+    console.log(`[IMPORT] 📄 Total row valid: ${rows.length}`);
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const excelRow = i + 2;
+      const excelRow = i + 2; // header di row 1
       const transaction = await db.transaction();
 
+      let nim = null;
+      let nama = "-";
+
       try {
+        console.log(`\n[ROW ${excelRow}] ▶️ Mulai proses`);
+
         // ===============================
         // NIM
         // ===============================
-        const nim = String(row["NIM"]).trim();
+        nim = String(row["NIM"]).trim();
+        console.log(`[ROW ${excelRow}] NIM: ${nim}`);
 
         const mahasiswa = await Mahasiswa.findOne({
           where: { nim },
@@ -713,15 +720,24 @@ export const importKlaimExcel = async (req, res) => {
           throw new Error(`Mahasiswa dengan NIM ${nim} tidak ditemukan`);
         }
 
+        nama = mahasiswa.nama_mhs;
+
+        console.log(
+          `[ROW ${excelRow}] Mahasiswa ditemukan: ${nama} (${mahasiswa.id_mhs})`
+        );
+
         // ===============================
-        // KODE KEGIATAN (🔥 PAKAI KODE SAJA)
+        // KODE KEGIATAN
         // ===============================
         const kodeRaw = row["Kode Kegiatan"];
+
         if (!kodeRaw || !kodeRaw.includes(" - ")) {
           throw new Error("Format Kode Kegiatan tidak valid");
         }
 
         const kode_keg = normalize(kodeRaw.split(" - ")[0]);
+
+        console.log(`[ROW ${excelRow}] Kode kegiatan: ${kode_keg}`);
 
         const masterpoin = await MasterPoin.findOne({
           where: db.where(db.fn("lower", db.col("kode_keg")), kode_keg),
@@ -733,6 +749,10 @@ export const importKlaimExcel = async (req, res) => {
             `MasterPoin ${kode_keg.toUpperCase()} tidak ditemukan`
           );
         }
+
+        console.log(
+          `[ROW ${excelRow}] MasterPoin OK → poin: ${masterpoin.bobot_poin}`
+        );
 
         // ===============================
         // TANGGAL
@@ -780,16 +800,45 @@ export const importKlaimExcel = async (req, res) => {
         await mahasiswa.save({ transaction });
 
         await transaction.commit();
+
+        console.log(
+          `[ROW ${excelRow}] ✅ SUCCESS → ${nama} (${nim}) +${masterpoin.bobot_poin} poin`
+        );
+
         success.push(nim);
       } catch (err) {
         await transaction.rollback();
+
+        console.error(
+          `[ROW ${excelRow}] ❌ FAILED → NIM: ${nim || "-"} | Nama: ${
+            nama || "-"
+          }`
+        );
+        console.error(`[ROW ${excelRow}] ❌ REASON: ${err.message}`);
+
         failed.push({
           row: excelRow,
-          nim: row["NIM"],
+          nim,
+          nama,
           error: err.message,
         });
       }
     }
+
+    console.log("\n================= [IMPORT RESULT] =================");
+    console.log(`✅ Success: ${success.length}`);
+    console.log(`❌ Failed : ${failed.length}`);
+
+    if (failed.length > 0) {
+      console.log("❌ DETAIL GAGAL:");
+      failed.forEach((f) => {
+        console.log(
+          `   - Row ${f.row} | NIM ${f.nim} | ${f.nama} → ${f.error}`
+        );
+      });
+    }
+
+    console.log("==================================================\n");
 
     return res.json({
       success: true,
@@ -798,7 +847,7 @@ export const importKlaimExcel = async (req, res) => {
       errors: failed,
     });
   } catch (err) {
-    console.error("IMPORT EXCEL FATAL ERROR:", err);
+    console.error("💥 IMPORT EXCEL FATAL ERROR:", err);
     return res.status(500).json({ message: err.message });
   }
 };
