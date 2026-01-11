@@ -18,6 +18,7 @@ import {
 } from "../middleware/authMiddleware.js";
 
 import upload from "../middleware/uploadMiddleware.js";
+import uploadExcel from "../middleware/uploadExcelMiddleware.js";
 
 const router = express.Router();
 
@@ -77,5 +78,13 @@ router.patch("/:id/status", authMiddleware, adminOnly, approveKlaim);
 // ADMIN: DELETE KLAIM
 // ===============================
 router.delete("/:id", authMiddleware, adminOnly, deleteKlaim);
+
+router.post(
+  "/import",
+  authMiddleware,
+  adminOnly,
+  uploadExcel.single("file"),
+  importKlaimKegiatanExcel
+);
 
 export default router;

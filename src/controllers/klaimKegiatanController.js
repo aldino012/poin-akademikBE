@@ -2,6 +2,8 @@
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import Mahasiswa from "../models/mahasiswaModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
+import fs from "fs";
+import XLSX from "xlsx";
 
 import {
   uploadToDrive,
@@ -591,5 +593,163 @@ export const streamBuktiKlaim = async (req, res) => {
   } catch (err) {
     console.error("STREAM BUKTI ERROR:", err);
     return res.status(500).json({ message: err.message });
+  }
+};
+
+export const importKlaimKegiatanExcel = async (req, res) => {
+  try {
+    /* ===============================
+     * 1. VALIDASI FILE
+     * =============================== */
+    if (!req.file) {
+      return res.status(400).json({
+        message: "File Excel belum diupload (field: file)",
+      });
+    }
+
+    console.log("IMPORT KLAIM FILE:", req.file.originalname);
+
+    /* ===============================
+     * 2. BACA EXCEL
+     * =============================== */
+    const workbook = XLSX.readFile(req.file.path);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: false,
+    });
+
+    if (!rows.length) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ message: "File Excel kosong" });
+    }
+
+    /* ===============================
+     * 3. COUNTER
+     * =============================== */
+    let berhasil = 0;
+    let gagal = 0;
+    let skip = {
+      nim_kosong: 0,
+      mahasiswa_tidak_ada: 0,
+      master_poin_tidak_ada: 0,
+      duplikat: 0,
+    };
+
+    const errors = [];
+
+    /* ===============================
+     * 4. LOOP ROW
+     * =============================== */
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const excelRow = i + 2;
+
+      try {
+        const nim = String(row["NIM"] || "").trim();
+        const kode_keg = String(row["Kode Kegiatan"] || "").trim();
+
+        if (!nim || !kode_keg) {
+          skip.nim_kosong++;
+          continue;
+        }
+
+        const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
+        if (!mahasiswa) {
+          skip.mahasiswa_tidak_ada++;
+          continue;
+        }
+
+        const masterPoin = await MasterPoin.findOne({
+          where: { kode_keg },
+        });
+        if (!masterPoin) {
+          skip.master_poin_tidak_ada++;
+          continue;
+        }
+
+        const tanggalPelaksanaan = row["Tanggal Pelaksanaan"]
+          ? new Date(row["Tanggal Pelaksanaan"])
+          : null;
+
+        const exist = await KlaimKegiatan.findOne({
+          where: {
+            mahasiswa_id: mahasiswa.id_mhs,
+            masterpoin_id: masterPoin.id,
+            tanggal_pelaksanaan: tanggalPelaksanaan,
+          },
+        });
+
+        if (exist) {
+          skip.duplikat++;
+          continue;
+        }
+
+        let status = String(row["Status"] || "revisi").toLowerCase();
+        if (status === "selesai") status = "disetujui";
+        if (!["disetujui", "revisi", "ditolak"].includes(status)) {
+          status = "revisi";
+        }
+
+        await KlaimKegiatan.create({
+          mahasiswa_id: mahasiswa.id_mhs,
+          masterpoin_id: masterPoin.id,
+          periode_pengajuan: row["Periode Pengajuan"] || "-",
+          tanggal_pengajuan: row["Tanggal Pengajuan"]
+            ? new Date(row["Tanggal Pengajuan"])
+            : null,
+          rincian_acara:
+            row["Rincian Acara"] || row["Deskripsi Kegiatan"] || "-",
+          tingkat: row["Tingkat"] || "-",
+          tempat: row["Tempat"] || "-",
+          tanggal_pelaksanaan: tanggalPelaksanaan,
+          mentor: row["Mentor"] || null,
+          narasumber: row["Narasumber"] || null,
+          bukti_file_id: row["Bukti Kegiatan"] || null,
+          poin: masterPoin.bobot_poin || 0,
+          status,
+        });
+
+        if (status === "disetujui") {
+          await mahasiswa.update({
+            total_poin:
+              Number(mahasiswa.total_poin || 0) +
+              Number(masterPoin.bobot_poin || 0),
+          });
+        }
+
+        berhasil++;
+      } catch (errRow) {
+        gagal++;
+        errors.push({
+          row: excelRow,
+          error: errRow.message,
+        });
+      }
+    }
+
+    /* ===============================
+     * 5. HAPUS FILE
+     * =============================== */
+    fs.unlinkSync(req.file.path);
+
+    /* ===============================
+     * 6. RESPONSE
+     * =============================== */
+    return res.json({
+      message: "Import klaim kegiatan berhasil",
+      total_excel: rows.length,
+      berhasil,
+      gagal,
+      skip,
+      errors,
+    });
+  } catch (err) {
+    console.error("IMPORT KLAIM ERROR:", err);
+    if (req.file?.path) fs.unlinkSync(req.file.path);
+    return res.status(500).json({
+      message: "Gagal import klaim kegiatan",
+      error: err.message,
+    });
   }
 };
