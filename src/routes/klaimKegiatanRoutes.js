@@ -8,7 +8,8 @@ import {
   updateKlaim,
   deleteKlaim,
   approveKlaim,
-  streamBuktiKlaim, // 🔥 STREAM PRIVATE DRIVE
+  streamBuktiKlaim,
+  importKlaimFromExcel, // 🔥 TAMBAHKAN INI
 } from "../controllers/klaimKegiatanController.js";
 
 import {
@@ -18,6 +19,7 @@ import {
 } from "../middleware/authMiddleware.js";
 
 import upload from "../middleware/uploadMiddleware.js";
+import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // 🔥 GUNKAN middleware Anda
 
 const router = express.Router();
 
@@ -55,6 +57,17 @@ router.post(
   mahasiswaOnly,
   upload.single("bukti_kegiatan"),
   createKlaim
+);
+
+// ===============================
+// ADMIN: IMPORT KLAIM DARI EXCEL
+// ===============================
+router.post(
+  "/import",
+  authMiddleware,
+  adminOnly,
+  uploadExcel.single("excel_file"), // 🔥 Menggunakan middleware Anda
+  importKlaimFromExcel
 );
 
 // ===============================
