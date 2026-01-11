@@ -600,21 +600,14 @@ export const streamBuktiKlaim = async (req, res) => {
 const parseTanggalIndonesia = (value) => {
   if (!value) return null;
 
-  // Jika sudah Date
+  // 🔥 Kalau Excel kirim Date object
   if (value instanceof Date) {
-    return value.toISOString().split("T")[0];
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, "0");
+    const day = String(value.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
   }
 
-  // Jika format excel number
-  if (typeof value === "number") {
-    const date = XLSX.SSF.parse_date_code(value);
-    if (!date) return null;
-    return `${date.y}-${String(date.m).padStart(2, "0")}-${String(
-      date.d
-    ).padStart(2, "0")}`;
-  }
-
-  // Format: "16 Juli 2025"
   const bulanMap = {
     januari: "01",
     februari: "02",
@@ -630,12 +623,16 @@ const parseTanggalIndonesia = (value) => {
     desember: "12",
   };
 
-  const parts = value.toString().toLowerCase().split(" ");
-  if (parts.length !== 3) return null;
+  const cleaned = value.toString().toLowerCase().replace(/\s+/g, " ").trim();
+  const parts = cleaned.split(" ");
 
-  const [day, monthStr, year] = parts;
+  if (parts.length < 3) return null;
+
+  const day = parts[0];
+  const monthStr = parts[1];
+  const year = parts[2];
+
   const month = bulanMap[monthStr];
-
   if (!month) return null;
 
   return `${year}-${month}-${day.padStart(2, "0")}`;
@@ -660,9 +657,6 @@ export const importKlaimExcel = async (req, res) => {
   const failed = [];
 
   try {
-    // ===============================
-    // BACA EXCEL
-    // ===============================
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
 
@@ -671,7 +665,7 @@ export const importKlaimExcel = async (req, res) => {
       raw: true,
     });
 
-    // 🔥 FILTER BARIS VALID (INI PENTING)
+    // 🔥 FILTER HANYA BARIS YANG ADA NIM
     const rows = rowsRaw.filter(
       (row) => row["NIM"] && String(row["NIM"]).trim() !== ""
     );
@@ -699,31 +693,23 @@ export const importKlaimExcel = async (req, res) => {
         }
 
         // ===============================
-        // KODE KEGIATAN
+        // KODE KEGIATAN (🔥 PAKAI KODE SAJA)
         // ===============================
         const kodeRaw = row["Kode Kegiatan"];
         if (!kodeRaw || !kodeRaw.includes(" - ")) {
           throw new Error("Format Kode Kegiatan tidak valid");
         }
 
-        const [kodeRawDb, posisiRawDb] = kodeRaw.split(" - ");
-
-        const kode_keg = normalize(kodeRawDb);
-        const posisi = normalize(posisiRawDb);
+        const kode_keg = normalize(kodeRaw.split(" - ")[0]);
 
         const masterpoin = await MasterPoin.findOne({
-          where: {
-            [Op.and]: [
-              db.where(db.fn("lower", db.col("kode_keg")), kode_keg),
-              db.where(db.fn("lower", db.col("posisi")), posisi),
-            ],
-          },
+          where: db.where(db.fn("lower", db.col("kode_keg")), kode_keg),
           transaction,
         });
 
         if (!masterpoin) {
           throw new Error(
-            `MasterPoin ${kodeRawDb.trim()} - ${posisiRawDb.trim()} tidak ditemukan`
+            `MasterPoin ${kode_keg.toUpperCase()} tidak ditemukan`
           );
         }
 
