@@ -2,6 +2,7 @@
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import Mahasiswa from "../models/mahasiswaModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
+import XLSX from "xlsx";
 
 import {
   uploadToDrive,
@@ -591,5 +592,195 @@ export const streamBuktiKlaim = async (req, res) => {
   } catch (err) {
     console.error("STREAM BUKTI ERROR:", err);
     return res.status(500).json({ message: err.message });
+  }
+};
+
+const parseTanggalIndonesia = (value) => {
+  if (!value) return null;
+
+  // Jika sudah Date
+  if (value instanceof Date) {
+    return value.toISOString().split("T")[0];
+  }
+
+  // Jika format excel number
+  if (typeof value === "number") {
+    const date = XLSX.SSF.parse_date_code(value);
+    if (!date) return null;
+    return `${date.y}-${String(date.m).padStart(2, "0")}-${String(
+      date.d
+    ).padStart(2, "0")}`;
+  }
+
+  // Format: "16 Juli 2025"
+  const bulanMap = {
+    januari: "01",
+    februari: "02",
+    maret: "03",
+    april: "04",
+    mei: "05",
+    juni: "06",
+    juli: "07",
+    agustus: "08",
+    september: "09",
+    oktober: "10",
+    november: "11",
+    desember: "12",
+  };
+
+  const parts = value.toString().toLowerCase().split(" ");
+  if (parts.length !== 3) return null;
+
+  const [day, monthStr, year] = parts;
+  const month = bulanMap[monthStr];
+
+  if (!month) return null;
+
+  return `${year}-${month}-${day.padStart(2, "0")}`;
+};
+
+// ===============================
+// IMPORT KLAIM DARI EXCEL (ADMIN)
+// ===============================
+export const importKlaimExcel = async (req, res) => {
+  if (!req.file || !req.file.buffer) {
+    return res.status(400).json({
+      message: "File Excel wajib diupload",
+    });
+  }
+
+  const transaction = await db.transaction();
+  const success = [];
+  const failed = [];
+
+  try {
+    // ===============================
+    // BACA EXCEL
+    // ===============================
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+    const sheetName = workbook.SheetNames[0];
+    const sheet = workbook.Sheets[sheetName];
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: true,
+    });
+
+    if (!rows.length) {
+      throw new Error("File Excel kosong");
+    }
+
+    // ===============================
+    // LOOP DATA
+    // ===============================
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+
+      try {
+        // ===============================
+        // VALIDASI NIM
+        // ===============================
+        const nim = row["NIM"];
+        if (!nim) {
+          throw new Error("NIM kosong");
+        }
+
+        const mahasiswa = await Mahasiswa.findOne({
+          where: { nim },
+          transaction,
+        });
+
+        if (!mahasiswa) {
+          throw new Error(`Mahasiswa dengan NIM ${nim} tidak ditemukan`);
+        }
+
+        // ===============================
+        // PARSE KODE + POSISI
+        // ===============================
+        const kodeRaw = row["Kode Kegiatan"];
+        if (!kodeRaw || !kodeRaw.includes(" - ")) {
+          throw new Error("Format Kode Kegiatan tidak valid");
+        }
+
+        const [kode_keg, posisi] = kodeRaw.split(" - ").map((v) => v.trim());
+
+        const masterpoin = await MasterPoin.findOne({
+          where: { kode_keg, posisi },
+          transaction,
+        });
+
+        if (!masterpoin) {
+          throw new Error(`MasterPoin ${kode_keg} - ${posisi} tidak ditemukan`);
+        }
+
+        // ===============================
+        // PARSE TANGGAL
+        // ===============================
+        const tanggal_pengajuan = parseTanggalIndonesia(
+          row["Tanggal Pengajuan"]
+        );
+        const tanggal_pelaksanaan = parseTanggalIndonesia(
+          row["Tanggal Pelaksanaan"]
+        );
+
+        if (!tanggal_pengajuan || !tanggal_pelaksanaan) {
+          throw new Error("Format tanggal tidak valid");
+        }
+
+        // ===============================
+        // INSERT KLAIM
+        // ===============================
+        await KlaimKegiatan.create(
+          {
+            mahasiswa_id: mahasiswa.id_mhs,
+            masterpoin_id: masterpoin.id_poin,
+            periode_pengajuan: row["Periode Pengajuan (semester)"],
+            tanggal_pengajuan,
+            rincian_acara:
+              row["Rincian Acara"] || row["Deskripsi Kegiatan"] || "-",
+            tingkat: row["Tingkat"] || "-",
+            tempat: row["Tempat"],
+            tanggal_pelaksanaan,
+            mentor: row["Mentor"] || null,
+            narasumber: row["Narasumber"] || null,
+            bukti_file_id: "IMPORT_EXCEL",
+            poin: masterpoin.bobot_poin,
+            status: "Disetujui",
+          },
+          { transaction }
+        );
+
+        // ===============================
+        // TAMBAH POIN MAHASISWA
+        // ===============================
+        mahasiswa.total_poin =
+          (mahasiswa.total_poin || 0) + masterpoin.bobot_poin;
+
+        await mahasiswa.save({ transaction });
+
+        success.push(nim);
+      } catch (rowError) {
+        failed.push({
+          row: i + 2, // header = row 1
+          nim: row["NIM"] || null,
+          error: rowError.message,
+        });
+      }
+    }
+
+    await transaction.commit();
+
+    return res.json({
+      success: true,
+      inserted: success.length,
+      failed: failed.length,
+      errors: failed,
+    });
+  } catch (err) {
+    await transaction.rollback();
+    console.error("IMPORT EXCEL ERROR:", err);
+    return res.status(500).json({
+      message: err.message,
+    });
   }
 };

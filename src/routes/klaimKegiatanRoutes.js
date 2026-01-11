@@ -1,4 +1,3 @@
-// src/routes/klaimKegiatanRoutes.js
 import express from "express";
 
 import {
@@ -8,7 +7,8 @@ import {
   updateKlaim,
   deleteKlaim,
   approveKlaim,
-  streamBuktiKlaim, // 🔥 STREAM PRIVATE DRIVE
+  streamBuktiKlaim,
+  importKlaimExcel, // 🔥 TAMBAH INI
 } from "../controllers/klaimKegiatanController.js";
 
 import {
@@ -17,7 +17,8 @@ import {
   mahasiswaOnly,
 } from "../middleware/authMiddleware.js";
 
-import upload from "../middleware/uploadMiddleware.js";
+import upload from "../middleware/uploadMiddleware.js"; // pdf / image
+import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // 🔥 excel
 
 const router = express.Router();
 
@@ -29,14 +30,11 @@ const router = express.Router();
 
 // ===============================
 // GET ALL KLAIM
-// Admin  : semua klaim
-// Mhs    : klaim miliknya
 // ===============================
 router.get("/", authMiddleware, getAllKlaim);
 
 // ===============================
-// STREAM / VIEW BUKTI KLAIM
-// 🔥 HARUS DI ATAS /:id
+// STREAM BUKTI
 // ===============================
 router.get("/:id/bukti", authMiddleware, streamBuktiKlaim);
 
@@ -47,7 +45,6 @@ router.get("/:id", authMiddleware, getKlaimById);
 
 // ===============================
 // MAHASISWA: CREATE KLAIM
-// upload bukti (pdf / image)
 // ===============================
 router.post(
   "/",
@@ -58,7 +55,7 @@ router.post(
 );
 
 // ===============================
-// MAHASISWA: UPDATE KLAIM (REVISI)
+// MAHASISWA: UPDATE KLAIM
 // ===============================
 router.put(
   "/:id",
@@ -69,7 +66,7 @@ router.put(
 );
 
 // ===============================
-// ADMIN: APPROVE / REJECT / REVISI
+// ADMIN: APPROVE / REVISI / TOLAK
 // ===============================
 router.patch("/:id/status", authMiddleware, adminOnly, approveKlaim);
 
@@ -77,5 +74,16 @@ router.patch("/:id/status", authMiddleware, adminOnly, approveKlaim);
 // ADMIN: DELETE KLAIM
 // ===============================
 router.delete("/:id", authMiddleware, adminOnly, deleteKlaim);
+
+// ==================================================
+// 🔥 ADMIN: IMPORT KLAIM DARI EXCEL
+// ==================================================
+router.post(
+  "/import-excel",
+  authMiddleware,
+  adminOnly,
+  uploadExcel.single("file"),
+  importKlaimExcel
+);
 
 export default router;
