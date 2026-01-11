@@ -643,9 +643,32 @@ const parseTanggalIndonesia = (value) => {
 // IMPORT KLAIM DARI EXCEL (ADMIN)
 // ===============================
 export const importKlaimExcel = async (req, res) => {
-  if (!req.file || !req.file.buffer) {
+  console.log("\n================= [IMPORT EXCEL] =================");
+
+  // ===============================
+  // CEK FILE
+  // ===============================
+  console.log("[IMPORT] req.file:", req.file);
+
+  if (!req.file) {
+    console.error("[IMPORT] ❌ req.file = undefined");
     return res.status(400).json({
       message: "File Excel wajib diupload",
+    });
+  }
+
+  console.log("[IMPORT] file info:", {
+    originalname: req.file.originalname,
+    mimetype: req.file.mimetype,
+    size: req.file.size,
+    hasBuffer: !!req.file.buffer,
+    path: req.file.path,
+  });
+
+  if (!req.file.buffer) {
+    console.error("[IMPORT] ❌ req.file.buffer kosong");
+    return res.status(400).json({
+      message: "Buffer file Excel tidak ditemukan",
     });
   }
 
@@ -657,7 +680,12 @@ export const importKlaimExcel = async (req, res) => {
     // ===============================
     // BACA EXCEL
     // ===============================
+    console.log("[IMPORT] membaca file Excel...");
+
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
+
+    console.log("[IMPORT] sheet names:", workbook.SheetNames);
+
     const sheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[sheetName];
 
@@ -666,21 +694,29 @@ export const importKlaimExcel = async (req, res) => {
       raw: true,
     });
 
+    console.log("[IMPORT] total rows terbaca:", rows.length);
+
     if (!rows.length) {
       throw new Error("File Excel kosong");
     }
+
+    console.log("[IMPORT] contoh row pertama:", rows[0]);
 
     // ===============================
     // LOOP DATA
     // ===============================
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
+      console.log(`\n[ROW ${i + 2}] ===============================`);
+      console.log("[ROW DATA]:", row);
 
       try {
         // ===============================
         // VALIDASI NIM
         // ===============================
         const nim = row["NIM"];
+        console.log("[ROW] NIM:", nim);
+
         if (!nim) {
           throw new Error("NIM kosong");
         }
@@ -690,24 +726,33 @@ export const importKlaimExcel = async (req, res) => {
           transaction,
         });
 
+        console.log("[ROW] mahasiswa:", mahasiswa?.id_mhs);
+
         if (!mahasiswa) {
           throw new Error(`Mahasiswa dengan NIM ${nim} tidak ditemukan`);
         }
 
         // ===============================
-        // PARSE KODE + POSISI
+        // PARSE KODE KEGIATAN
         // ===============================
         const kodeRaw = row["Kode Kegiatan"];
+        console.log("[ROW] kode kegiatan raw:", kodeRaw);
+
         if (!kodeRaw || !kodeRaw.includes(" - ")) {
           throw new Error("Format Kode Kegiatan tidak valid");
         }
 
         const [kode_keg, posisi] = kodeRaw.split(" - ").map((v) => v.trim());
 
+        console.log("[ROW] kode_keg:", kode_keg);
+        console.log("[ROW] posisi:", posisi);
+
         const masterpoin = await MasterPoin.findOne({
           where: { kode_keg, posisi },
           transaction,
         });
+
+        console.log("[ROW] masterpoin:", masterpoin?.id_poin);
 
         if (!masterpoin) {
           throw new Error(`MasterPoin ${kode_keg} - ${posisi} tidak ditemukan`);
@@ -716,12 +761,21 @@ export const importKlaimExcel = async (req, res) => {
         // ===============================
         // PARSE TANGGAL
         // ===============================
+        console.log("[ROW] tanggal pengajuan raw:", row["Tanggal Pengajuan"]);
+        console.log(
+          "[ROW] tanggal pelaksanaan raw:",
+          row["Tanggal Pelaksanaan"]
+        );
+
         const tanggal_pengajuan = parseTanggalIndonesia(
           row["Tanggal Pengajuan"]
         );
         const tanggal_pelaksanaan = parseTanggalIndonesia(
           row["Tanggal Pelaksanaan"]
         );
+
+        console.log("[ROW] tanggal_pengajuan parsed:", tanggal_pengajuan);
+        console.log("[ROW] tanggal_pelaksanaan parsed:", tanggal_pelaksanaan);
 
         if (!tanggal_pengajuan || !tanggal_pelaksanaan) {
           throw new Error("Format tanggal tidak valid");
@@ -730,6 +784,8 @@ export const importKlaimExcel = async (req, res) => {
         // ===============================
         // INSERT KLAIM
         // ===============================
+        console.log("[ROW] insert KlaimKegiatan...");
+
         await KlaimKegiatan.create(
           {
             mahasiswa_id: mahasiswa.id_mhs,
@@ -751,17 +807,20 @@ export const importKlaimExcel = async (req, res) => {
         );
 
         // ===============================
-        // TAMBAH POIN MAHASISWA
+        // UPDATE TOTAL POIN
         // ===============================
         mahasiswa.total_poin =
           (mahasiswa.total_poin || 0) + masterpoin.bobot_poin;
 
         await mahasiswa.save({ transaction });
 
+        console.log("[ROW] ✅ SUCCESS insert NIM:", nim);
         success.push(nim);
       } catch (rowError) {
+        console.error(`[ROW ${i + 2}] ❌ ERROR:`, rowError.message);
+
         failed.push({
-          row: i + 2, // header = row 1
+          row: i + 2, // baris excel (header = 1)
           nim: row["NIM"] || null,
           error: rowError.message,
         });
@@ -769,6 +828,11 @@ export const importKlaimExcel = async (req, res) => {
     }
 
     await transaction.commit();
+
+    console.log("\n[IMPORT] FINISHED");
+    console.log("[IMPORT] success:", success.length);
+    console.log("[IMPORT] failed:", failed.length);
+    console.log("===============================================\n");
 
     return res.json({
       success: true,
@@ -778,7 +842,9 @@ export const importKlaimExcel = async (req, res) => {
     });
   } catch (err) {
     await transaction.rollback();
-    console.error("IMPORT EXCEL ERROR:", err);
+    console.error("IMPORT EXCEL FATAL ERROR:", err);
+    console.log("===============================================\n");
+
     return res.status(500).json({
       message: err.message,
     });
