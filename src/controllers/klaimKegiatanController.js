@@ -653,12 +653,10 @@ export const importKlaimKegiatanExcel = async (req, res) => {
 
       // 🔹 AMBIL DATA EXCEL (FLEKSIBEL)
       const nim = getValue(row, ["NIM", "nim", "Nim"]);
-      const kodeKeg = getValue(row, [
-        "Kode Kegiatan",
-        "kode_keg",
-        "Kode",
-        "Kode Kegiatan SKP",
-      ]);
+      const rawKodeKeg = getValue(row, ["Kode Kegiatan", "kode_keg", "Kode"]);
+
+      // 🔥 AMBIL KODE SAJA (PKK3 dari "PKK3 - Sosialisasi / Seminar")
+      const kodeKeg = rawKodeKeg.split("-")[0].trim();
 
       const tanggalPelaksanaan = getValue(row, [
         "Tanggal Pelaksanaan",
