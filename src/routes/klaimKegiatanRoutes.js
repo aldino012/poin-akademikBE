@@ -9,6 +9,7 @@ import {
   deleteKlaim,
   approveKlaim,
   streamBuktiKlaim, // 🔥 STREAM PRIVATE DRIVE
+  importKlaimKegiatanExcel,
 } from "../controllers/klaimKegiatanController.js";
 
 import {
