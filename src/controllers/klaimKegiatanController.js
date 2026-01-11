@@ -598,37 +598,26 @@ export const streamBuktiKlaim = async (req, res) => {
 
 export const importKlaimKegiatanExcel = async (req, res) => {
   try {
-    /* ===============================
-     * 1. VALIDASI FILE
-     * =============================== */
+    // ===============================
+    // 1. VALIDASI FILE
+    // ===============================
     if (!req.file) {
-      return res.status(400).json({
-        message: "File Excel belum diupload (field: file)",
-      });
+      return res.status(400).json({ message: "File Excel belum diupload" });
     }
 
-    console.log("IMPORT KLAIM FILE:", req.file.originalname);
-
-    /* ===============================
-     * 2. BACA EXCEL
-     * =============================== */
     const workbook = XLSX.readFile(req.file.path);
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const rows = XLSX.utils.sheet_to_json(sheet, {
-      defval: "",
-      raw: false,
-    });
+    const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
 
     if (!rows.length) {
       fs.unlinkSync(req.file.path);
       return res.status(400).json({ message: "File Excel kosong" });
     }
 
-    /* ===============================
-     * 3. COUNTER
-     * =============================== */
-    let berhasil = 0;
-    let gagal = 0;
+    // ===============================
+    // 2. COUNTER
+    // ===============================
+    let inserted = 0;
     let skip = {
       nim_kosong: 0,
       mahasiswa_tidak_ada: 0,
@@ -638,118 +627,135 @@ export const importKlaimKegiatanExcel = async (req, res) => {
 
     const errors = [];
 
-    /* ===============================
-     * 4. LOOP ROW
-     * =============================== */
+    // ===============================
+    // 3. LOOP EXCEL
+    // ===============================
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
-      const excelRow = i + 2;
+      const rowIndex = i + 2;
 
-      try {
-        const nim = String(row["NIM"] || "").trim();
-        const kode_keg = String(row["Kode Kegiatan"] || "").trim();
+      const nim = String(row["NIM"] || "").trim();
+      const jenisKegiatan = String(row["Jenis Kegiatan"] || "").trim();
+      const posisi = String(row["Posisi"] || "").trim();
+      const statusRaw = String(row["Status"] || "revisi").toLowerCase();
+      const tanggalPelaksanaan = row["Tanggal Pelaksanaan"] || null;
 
-        if (!nim || !kode_keg) {
-          skip.nim_kosong++;
-          continue;
-        }
-
-        const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
-        if (!mahasiswa) {
-          skip.mahasiswa_tidak_ada++;
-          continue;
-        }
-
-        const masterPoin = await MasterPoin.findOne({
-          where: { kode_keg },
+      // ===============================
+      // VALIDASI MINIMAL
+      // ===============================
+      if (!nim || !jenisKegiatan || !posisi) {
+        skip.nim_kosong++;
+        errors.push({
+          row: rowIndex,
+          reason: "NIM / Jenis Kegiatan / Posisi kosong",
         });
-        if (!masterPoin) {
-          skip.master_poin_tidak_ada++;
-          continue;
-        }
+        continue;
+      }
 
-        const tanggalPelaksanaan = row["Tanggal Pelaksanaan"]
-          ? new Date(row["Tanggal Pelaksanaan"])
-          : null;
-
-        const exist = await KlaimKegiatan.findOne({
-          where: {
-            mahasiswa_id: mahasiswa.id_mhs,
-            masterpoin_id: masterPoin.id,
-            tanggal_pelaksanaan: tanggalPelaksanaan,
-          },
+      // ===============================
+      // CARI MAHASISWA
+      // ===============================
+      const mahasiswa = await Mahasiswa.findOne({ where: { nim } });
+      if (!mahasiswa) {
+        skip.mahasiswa_tidak_ada++;
+        errors.push({
+          row: rowIndex,
+          nim,
+          reason: "Mahasiswa tidak ditemukan",
         });
+        continue;
+      }
 
-        if (exist) {
-          skip.duplikat++;
-          continue;
-        }
+      // ===============================
+      // CARI MASTER POIN (INI KUNCI)
+      // ===============================
+      const masterPoin = await MasterPoin.findOne({
+        where: {
+          jenis_kegiatan: jenisKegiatan,
+          posisi: posisi,
+        },
+      });
 
-        let status = String(row["Status"] || "revisi").toLowerCase();
-        if (status === "selesai") status = "disetujui";
-        if (!["disetujui", "revisi", "ditolak"].includes(status)) {
-          status = "revisi";
-        }
+      if (!masterPoin) {
+        skip.master_poin_tidak_ada++;
+        errors.push({
+          row: rowIndex,
+          jenisKegiatan,
+          posisi,
+          reason: "MasterPoin tidak ditemukan",
+        });
+        continue;
+      }
 
-        await KlaimKegiatan.create({
+      // ===============================
+      // CEK DUPLIKAT KLAIM
+      // ===============================
+      const exist = await KlaimKegiatan.findOne({
+        where: {
           mahasiswa_id: mahasiswa.id_mhs,
           masterpoin_id: masterPoin.id,
-          periode_pengajuan: row["Periode Pengajuan"] || "-",
-          tanggal_pengajuan: row["Tanggal Pengajuan"]
-            ? new Date(row["Tanggal Pengajuan"])
-            : null,
-          rincian_acara:
-            row["Rincian Acara"] || row["Deskripsi Kegiatan"] || "-",
-          tingkat: row["Tingkat"] || "-",
-          tempat: row["Tempat"] || "-",
           tanggal_pelaksanaan: tanggalPelaksanaan,
-          mentor: row["Mentor"] || null,
-          narasumber: row["Narasumber"] || null,
-          bukti_file_id: row["Bukti Kegiatan"] || null,
-          poin: masterPoin.bobot_poin || 0,
-          status,
-        });
+        },
+      });
 
-        if (status === "disetujui") {
-          await mahasiswa.update({
-            total_poin:
-              Number(mahasiswa.total_poin || 0) +
-              Number(masterPoin.bobot_poin || 0),
-          });
-        }
+      if (exist) {
+        skip.duplikat++;
+        continue;
+      }
 
-        berhasil++;
-      } catch (errRow) {
-        gagal++;
-        errors.push({
-          row: excelRow,
-          error: errRow.message,
+      // ===============================
+      // NORMALISASI STATUS
+      // ===============================
+      let status = "revisi";
+      if (["disetujui", "ditolak", "revisi"].includes(statusRaw)) {
+        status = statusRaw;
+      }
+
+      // ===============================
+      // INSERT KLAIM
+      // ===============================
+      await KlaimKegiatan.create({
+        mahasiswa_id: mahasiswa.id_mhs,
+        masterpoin_id: masterPoin.id,
+        periode_pengajuan: row["Periode Pengajuan"] || "-",
+        tanggal_pengajuan: row["Tanggal Pengajuan"] || null,
+        tanggal_pelaksanaan: tanggalPelaksanaan,
+        rincian_acara: row["Rincian Acara"] || "-",
+        tingkat: row["Tingkat"] || "-",
+        tempat: row["Tempat"] || "-",
+        mentor: row["Mentor"] || null,
+        narasumber: row["Narasumber"] || null,
+        status,
+        poin: masterPoin.bobot_poin,
+      });
+
+      // ===============================
+      // UPDATE TOTAL POIN
+      // ===============================
+      if (status === "disetujui") {
+        await mahasiswa.update({
+          total_poin: Number(mahasiswa.total_poin || 0) + masterPoin.bobot_poin,
         });
       }
+
+      inserted++;
     }
 
-    /* ===============================
-     * 5. HAPUS FILE
-     * =============================== */
     fs.unlinkSync(req.file.path);
 
-    /* ===============================
-     * 6. RESPONSE
-     * =============================== */
+    // ===============================
+    // RESPONSE
+    // ===============================
     return res.json({
       message: "Import klaim kegiatan berhasil",
       total_excel: rows.length,
-      berhasil,
-      gagal,
+      berhasil: inserted,
       skip,
       errors,
     });
   } catch (err) {
-    console.error("IMPORT KLAIM ERROR:", err);
+    console.error("IMPORT ERROR:", err);
     if (req.file?.path) fs.unlinkSync(req.file.path);
-    return res.status(500).json({
-      message: "Gagal import klaim kegiatan",
-      error: err.message,
-    });
+    return res.status(500).json({ message: err.message });
   }
 };
