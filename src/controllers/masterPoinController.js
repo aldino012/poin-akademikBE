@@ -92,23 +92,41 @@ export const deleteMasterPoin = async (req, res) => {
 // ======================================================
 // IMPORT EXCEL
 // ======================================================
+import XLSX from "xlsx";
+
+// ===============================
+// IMPORT MASTER POIN (EXCEL)
+// ===============================
 export const importMasterPoinExcel = async (req, res) => {
   try {
-    if (!req.file) {
-      return res.status(400).json({ message: "File Excel belum diupload." });
+    // ======================================================
+    // VALIDASI FILE
+    // ======================================================
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({
+        message: "File Excel belum diupload",
+      });
     }
 
-    const workbook = xlsx.readFile(req.file.path);
+    // ======================================================
+    // BACA EXCEL DARI BUFFER (WAJIB UNTUK RAILWAY)
+    // ======================================================
+    const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
-    const dataExcel = xlsx.utils.sheet_to_json(sheet);
+    const dataExcel = XLSX.utils.sheet_to_json(sheet, {
+      defval: "",
+      raw: true,
+    });
 
     if (dataExcel.length === 0) {
-      return res.status(400).json({ message: "File Excel kosong." });
+      return res.status(400).json({
+        message: "File Excel kosong",
+      });
     }
 
-    // =================================================================
-    // FILTER BERSIH (UPPERCASE & CLEANSING)
-    // =================================================================
+    // ======================================================
+    // NORMALISASI DATA
+    // ======================================================
     const cleanUP = (text) => {
       if (!text) return "";
       return text
@@ -123,33 +141,36 @@ export const importMasterPoinExcel = async (req, res) => {
 
     let inserted = 0;
     let skipped = 0;
-    let errors = [];
+    const errors = [];
 
+    // ======================================================
+    // LOOP DATA
+    // ======================================================
     for (let i = 0; i < dataExcel.length; i++) {
       const row = dataExcel[i];
+      const excelRow = i + 2; // header = row 1
 
-      // 🔥 Ambil & filter nilai excel
       const kode_keg = cleanUP(row["Kode Keg (WAJIB 4 HURUF)"]);
       const jenis_kegiatan = cleanUP(row["Jenis Kegiatan"]);
       const posisi = cleanUP(row["Deskripsi"]);
       const bobot_poin = cleanNumber(row["Bobot Poin"]);
 
-      // ============================
+      // ===============================
       // VALIDASI WAJIB
-      // ============================
+      // ===============================
       if (!kode_keg || !jenis_kegiatan || !posisi || !bobot_poin) {
-        errors.push({
-          row: i + 2,
-          error:
-            "Kolom tidak lengkap. Kolom wajib: Kode Keg (WAJIB 4 HURUF), Jenis Kegiatan, Deskripsi, Bobot Poin",
-        });
         skipped++;
+        errors.push({
+          row: excelRow,
+          error:
+            "Kolom wajib belum lengkap (Kode Keg, Jenis Kegiatan, Deskripsi, Bobot Poin)",
+        });
         continue;
       }
 
-      // ============================
-      // CEK DUPLIKAT (kode_keg)
-      // ============================
+      // ===============================
+      // CEK DUPLIKAT
+      // ===============================
       const exist = await MasterPoin.findOne({
         where: { kode_keg },
       });
@@ -159,9 +180,9 @@ export const importMasterPoinExcel = async (req, res) => {
         continue;
       }
 
-      // =============================
-      // SIMPAN DATA
-      // =============================
+      // ===============================
+      // INSERT
+      // ===============================
       try {
         await MasterPoin.create({
           kode_keg,
@@ -169,19 +190,20 @@ export const importMasterPoinExcel = async (req, res) => {
           posisi,
           bobot_poin,
         });
+
         inserted++;
       } catch (err) {
+        skipped++;
         errors.push({
-          row: i + 2,
+          row: excelRow,
           error: err.message,
         });
-        skipped++;
       }
     }
 
-    // Hapus file excel setelah selesai
-    fs.unlinkSync(req.file.path);
-
+    // ======================================================
+    // RESPONSE
+    // ======================================================
     return res.status(200).json({
       message: "Import Master Poin selesai",
       total_data: dataExcel.length,
@@ -190,10 +212,10 @@ export const importMasterPoinExcel = async (req, res) => {
       errors,
     });
   } catch (error) {
+    console.error("❌ IMPORT MASTERPOIN ERROR:", error);
     return res.status(500).json({ message: error.message });
   }
 };
-
 
 // ======================================================
 // EXPORT EXCEL
