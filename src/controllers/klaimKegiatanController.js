@@ -2,6 +2,7 @@
 import KlaimKegiatan from "../models/klaimKegiatanModel.js";
 import Mahasiswa from "../models/mahasiswaModel.js";
 import MasterPoin from "../models/masterpoinModel.js";
+import db from "../config/db.js";
 import XLSX from "xlsx";
 
 import {
