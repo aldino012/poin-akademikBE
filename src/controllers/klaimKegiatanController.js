@@ -600,14 +600,34 @@ export const streamBuktiKlaim = async (req, res) => {
 const parseTanggalIndonesia = (value) => {
   if (!value) return null;
 
-  // 🔥 Kalau Excel kirim Date object
-  if (value instanceof Date) {
+  // ===============================
+  // 1️⃣ Excel Date Serial Number
+  // ===============================
+  if (typeof value === "number") {
+    // Excel epoch: 1899-12-30
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const date = new Date(excelEpoch.getTime() + value * 86400000);
+
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+    const day = String(date.getUTCDate()).padStart(2, "0");
+
+    return `${year}-${month}-${day}`;
+  }
+
+  // ===============================
+  // 2️⃣ Native JS Date object
+  // ===============================
+  if (value instanceof Date && !isNaN(value)) {
     const year = value.getFullYear();
     const month = String(value.getMonth() + 1).padStart(2, "0");
     const day = String(value.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   }
 
+  // ===============================
+  // 3️⃣ Format teks Indonesia
+  // ===============================
   const bulanMap = {
     januari: "01",
     februari: "02",
@@ -624,8 +644,8 @@ const parseTanggalIndonesia = (value) => {
   };
 
   const cleaned = value.toString().toLowerCase().replace(/\s+/g, " ").trim();
-  const parts = cleaned.split(" ");
 
+  const parts = cleaned.split(" ");
   if (parts.length < 3) return null;
 
   const day = parts[0];
@@ -637,6 +657,7 @@ const parseTanggalIndonesia = (value) => {
 
   return `${year}-${month}-${day.padStart(2, "0")}`;
 };
+
 
 // ===============================
 // IMPORT KLAIM DARI EXCEL (ADMIN)
