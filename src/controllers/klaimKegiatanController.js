@@ -677,6 +677,7 @@ export const importKlaimExcel = async (req, res) => {
 
   const success = [];
   const failed = [];
+  const skipped = [];
 
   try {
     const workbook = XLSX.read(req.file.buffer, { type: "buffer" });
@@ -769,6 +770,28 @@ export const importKlaimExcel = async (req, res) => {
         }
 
         // ===============================
+        // CEK DUPLIKASI KLAIM
+        // ===============================
+        const existingKlaim = await KlaimKegiatan.findOne({
+          where: {
+            mahasiswa_id: mahasiswa.id_mhs,
+            masterpoin_id: masterpoin.id_poin,
+            tanggal_pengajuan,
+            tanggal_pelaksanaan,
+          },
+          transaction,
+        });
+
+        if (existingKlaim) {
+          console.log(
+            `[ROW ${excelRow}] ⚠️ DUPLIKAT → Klaim sudah ada, dilewati`
+          );
+          skipped.push(nim);
+          await transaction.rollback();
+          continue;
+        }
+
+        // ===============================
         // INSERT KLAIM
         // ===============================
         await KlaimKegiatan.create(
@@ -827,6 +850,7 @@ export const importKlaimExcel = async (req, res) => {
 
     console.log("\n================= [IMPORT RESULT] =================");
     console.log(`✅ Success: ${success.length}`);
+    console.log(`⚠️ Skipped (duplikat): ${skipped.length}`);
     console.log(`❌ Failed : ${failed.length}`);
 
     if (failed.length > 0) {
@@ -843,6 +867,7 @@ export const importKlaimExcel = async (req, res) => {
     return res.json({
       success: true,
       inserted: success.length,
+      skipped: skipped.length,
       failed: failed.length,
       errors: failed,
     });
