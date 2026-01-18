@@ -906,9 +906,9 @@ const formatTanggalIndonesia = (date) => {
 // EXPORT KLAIM KEGIATAN (ADMIN)
 // ===============================
 export const exportKlaimExcel = async (req, res) => {
-  console.log("\n================= [EXPORT KLAIM EXCEL] =================");
-
   try {
+    console.log("\n================= [EXPORT KLAIM EXCEL] =================");
+
     const klaimList = await KlaimKegiatan.findAll({
       include: [
         {
@@ -918,43 +918,47 @@ export const exportKlaimExcel = async (req, res) => {
         },
         {
           model: MasterPoin,
-          as: "masterPoin", // ✅ HARUS SAMA DENGAN ASSOCIATION
+          as: "masterPoin",
           attributes: ["kode_keg", "jenis_kegiatan", "bobot_poin"],
         },
       ],
-      order: [["created_at", "ASC"]],
+      order: [["tanggal_pengajuan", "ASC"]], // ✅ VALID
     });
 
-    console.log(`[EXPORT] Total data: ${klaimList.length}`);
+    if (klaimList.length === 0) {
+      return res.status(404).json({
+        message: "Data klaim kosong",
+      });
+    }
 
-    const rows = klaimList.map((item, index) => ({
+    // ===============================
+    // FORMAT DATA UNTUK EXCEL
+    // ===============================
+    const dataExcel = klaimList.map((k, index) => ({
       No: index + 1,
-      NIM: item.mahasiswa?.nim || "-",
-      "Nama Mahasiswa": item.mahasiswa?.nama_mhs || "-",
-
-      // 🔥 FIX UTAMA ADA DI SINI
-      "Kode Kegiatan": item.masterPoin
-        ? `${item.masterPoin.kode_keg.toUpperCase()} - ${item.masterPoin.jenis_kegiatan}`
-        : "-",
-
-      "Periode Pengajuan (semester)": item.periode_pengajuan,
-      "Tanggal Pengajuan": formatTanggalIndonesia(item.tanggal_pengajuan),
-      "Tanggal Pelaksanaan": formatTanggalIndonesia(item.tanggal_pelaksanaan),
-      "Rincian Acara": item.rincian_acara,
-      Tingkat: item.tingkat,
-      Tempat: item.tempat,
-      Mentor: item.mentor || "-",
-      Narasumber: item.narasumber || "-",
-      Poin: item.poin,
-      Status: item.status,
-      "Total Poin Mahasiswa": item.mahasiswa?.total_poin || 0,
+      NIM: k.mahasiswa?.nim || "-",
+      Nama: k.mahasiswa?.nama_mhs || "-",
+      "Kode Kegiatan": k.masterPoin?.kode_keg || "-",
+      "Jenis Kegiatan": k.masterPoin?.jenis_kegiatan || "-",
+      "Periode Pengajuan": k.periode_pengajuan,
+      "Tanggal Pengajuan": k.tanggal_pengajuan,
+      "Tanggal Pelaksanaan": k.tanggal_pelaksanaan,
+      "Rincian Acara": k.rincian_acara,
+      Tingkat: k.tingkat,
+      Tempat: k.tempat,
+      Mentor: k.mentor || "-",
+      Narasumber: k.narasumber || "-",
+      Poin: k.poin,
+      Status: k.status,
+      Catatan: k.catatan || "-",
     }));
 
     // ===============================
-    // BUAT WORKBOOK
+    // BUAT FILE EXCEL
     // ===============================
-    const worksheet = XLSX.utils.json_to_sheet(rows);
+    const worksheet = XLSX.utils.json_to_sheet(dataExcel);
     const workbook = XLSX.utils.book_new();
+
     XLSX.utils.book_append_sheet(workbook, worksheet, "Klaim Kegiatan");
 
     const buffer = XLSX.write(workbook, {
@@ -962,22 +966,28 @@ export const exportKlaimExcel = async (req, res) => {
       bookType: "xlsx",
     });
 
+    // ===============================
+    // RESPONSE DOWNLOAD
+    // ===============================
     res.setHeader(
       "Content-Disposition",
-      'attachment; filename="klaim_kegiatan.xlsx"',
+      'attachment; filename="export_klaim_kegiatan.xlsx"',
     );
     res.setHeader(
       "Content-Type",
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
 
-    console.log("[EXPORT] ✅ Export berhasil\n");
+    console.log(`✅ Export berhasil: ${klaimList.length} data`);
+    console.log("======================================================\n");
+
     return res.send(buffer);
-  } catch (err) {
-    console.error("❌ EXPORT ERROR:", err);
+  } catch (error) {
+    console.error("❌ Gagal export klaim kegiatan:", error);
     return res.status(500).json({
       message: "Gagal export klaim kegiatan",
-      error: err.message,
+      error: error.message,
     });
   }
 };
+
