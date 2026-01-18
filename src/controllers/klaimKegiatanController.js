@@ -918,7 +918,7 @@ export const exportKlaimExcel = async (req, res) => {
         },
         {
           model: MasterPoin,
-          as: "masterpoin",
+          as: "masterPoin",
           attributes: ["kode_keg", "nama_kegiatan", "bobot_poin"],
         },
       ],
