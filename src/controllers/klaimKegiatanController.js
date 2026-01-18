@@ -918,8 +918,8 @@ export const exportKlaimExcel = async (req, res) => {
         },
         {
           model: MasterPoin,
-          as: "masterPoin",
-          attributes: ["kode_keg", "nama_kegiatan", "bobot_poin"],
+          as: "masterPoin", // ✅ HARUS SAMA DENGAN ASSOCIATION
+          attributes: ["kode_keg", "jenis_kegiatan", "bobot_poin"],
         },
       ],
       order: [["created_at", "ASC"]],
@@ -929,20 +929,25 @@ export const exportKlaimExcel = async (req, res) => {
 
     const rows = klaimList.map((item, index) => ({
       No: index + 1,
-      NIM: item.mahasiswa?.nim,
-      "Nama Mahasiswa": item.mahasiswa?.nama_mhs,
-      "Kode Kegiatan": `${item.masterpoin?.kode_keg.toUpperCase()} - ${item.masterpoin?.nama_kegiatan}`,
+      NIM: item.mahasiswa?.nim || "-",
+      "Nama Mahasiswa": item.mahasiswa?.nama_mhs || "-",
+
+      // 🔥 FIX UTAMA ADA DI SINI
+      "Kode Kegiatan": item.masterPoin
+        ? `${item.masterPoin.kode_keg.toUpperCase()} - ${item.masterPoin.jenis_kegiatan}`
+        : "-",
+
       "Periode Pengajuan (semester)": item.periode_pengajuan,
       "Tanggal Pengajuan": formatTanggalIndonesia(item.tanggal_pengajuan),
       "Tanggal Pelaksanaan": formatTanggalIndonesia(item.tanggal_pelaksanaan),
       "Rincian Acara": item.rincian_acara,
       Tingkat: item.tingkat,
       Tempat: item.tempat,
-      Mentor: item.mentor,
-      Narasumber: item.narasumber,
+      Mentor: item.mentor || "-",
+      Narasumber: item.narasumber || "-",
       Poin: item.poin,
       Status: item.status,
-      "Total Poin Mahasiswa": item.mahasiswa?.total_poin,
+      "Total Poin Mahasiswa": item.mahasiswa?.total_poin || 0,
     }));
 
     // ===============================
@@ -950,20 +955,13 @@ export const exportKlaimExcel = async (req, res) => {
     // ===============================
     const worksheet = XLSX.utils.json_to_sheet(rows);
     const workbook = XLSX.utils.book_new();
-
     XLSX.utils.book_append_sheet(workbook, worksheet, "Klaim Kegiatan");
 
-    // ===============================
-    // BUFFER EXCEL
-    // ===============================
     const buffer = XLSX.write(workbook, {
       type: "buffer",
       bookType: "xlsx",
     });
 
-    // ===============================
-    // RESPONSE DOWNLOAD
-    // ===============================
     res.setHeader(
       "Content-Disposition",
       'attachment; filename="klaim_kegiatan.xlsx"',
@@ -973,8 +971,7 @@ export const exportKlaimExcel = async (req, res) => {
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     );
 
-    console.log("[EXPORT] ✅ File Excel berhasil dibuat\n");
-
+    console.log("[EXPORT] ✅ Export berhasil\n");
     return res.send(buffer);
   } catch (err) {
     console.error("❌ EXPORT ERROR:", err);
@@ -984,4 +981,3 @@ export const exportKlaimExcel = async (req, res) => {
     });
   }
 };
-
