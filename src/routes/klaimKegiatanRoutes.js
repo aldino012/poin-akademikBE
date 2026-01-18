@@ -8,7 +8,8 @@ import {
   deleteKlaim,
   approveKlaim,
   streamBuktiKlaim,
-  importKlaimExcel, // 🔥 TAMBAH INI
+  importKlaimExcel, // 🔥 IMPORT
+  exportKlaimExcel, // 🔥 EXPORT (BARU)
 } from "../controllers/klaimKegiatanController.js";
 
 import {
@@ -18,7 +19,7 @@ import {
 } from "../middleware/authMiddleware.js";
 
 import upload from "../middleware/uploadMiddleware.js"; // pdf / image
-import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // 🔥 excel
+import uploadExcel from "../middleware/uploadExcelMiddleware.js"; // excel
 
 const router = express.Router();
 
@@ -27,6 +28,12 @@ const router = express.Router();
  *  SEMUA ROUTE WAJIB LOGIN
  * =====================================================
  */
+
+// ==================================================
+// 🔥 ADMIN: EXPORT KLAIM KE EXCEL
+// ⚠️ HARUS DI ATAS "/:id" AGAR TIDAK BENTROK
+// ==================================================
+router.get("/export-excel", authMiddleware, adminOnly, exportKlaimExcel);
 
 // ===============================
 // GET ALL KLAIM
@@ -51,7 +58,7 @@ router.post(
   authMiddleware,
   mahasiswaOnly,
   upload.single("bukti_kegiatan"),
-  createKlaim
+  createKlaim,
 );
 
 // ===============================
@@ -62,7 +69,7 @@ router.put(
   authMiddleware,
   mahasiswaOnly,
   upload.single("bukti_kegiatan"),
-  updateKlaim
+  updateKlaim,
 );
 
 // ===============================
@@ -83,7 +90,7 @@ router.post(
   authMiddleware,
   adminOnly,
   uploadExcel.single("file"),
-  importKlaimExcel
+  importKlaimExcel,
 );
 
 export default router;
