@@ -114,12 +114,12 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
     if (!adminExist) {
       const hashed = await bcrypt.hash(
-        process.env.ADMIN_PASSWORD || "admin123",
-        10
+        process.env.ADMIN_PASSWORD || "nantidulumas",
+        10,
       );
 
       await User.create({
-        nip: "1234567890",
+        nip: " 0718128501",
         nama: "Admin Kemahasiswaan",
         email: "kemahasiswaan@kampus.ac.id",
         password: hashed,

@@ -442,7 +442,6 @@ export const updateMahasiswa = async (req, res) => {
   }
 };
 
-
 // ======================================================
 // ✅ DELETE MAHASISWA
 // ======================================================
@@ -955,5 +954,3 @@ export const streamFotoMahasiswa = async (req, res) => {
     res.status(404).end();
   }
 };
-
-
