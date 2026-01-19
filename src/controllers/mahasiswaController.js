@@ -495,15 +495,17 @@ export const getMahasiswaKegiatan = async (req, res) => {
   try {
     const { id } = req.params;
 
+    // 1️⃣ Cek mahasiswa
     const mahasiswa = await Mahasiswa.findByPk(id);
     if (!mahasiswa) {
       return res.status(404).json({ message: "Mahasiswa tidak ditemukan" });
     }
 
+    // 2️⃣ Ambil semua klaim kegiatan Disetujui
     const kegiatan = await KlaimKegiatan.findAll({
       where: {
         mahasiswa_id: id,
-        status: "Disetujui", // ✅ case-sensitive fix
+        status: "Disetujui", // pastikan di DB ada
       },
       include: [
         {
@@ -514,21 +516,22 @@ export const getMahasiswaKegiatan = async (req, res) => {
       order: [["tanggal_pelaksanaan", "DESC"]],
     });
 
-    // =========================
-    // 🔥 FORMAT DATA (FIX UTAMA)
-    // =========================
+    // 🔹 DEBUG: jika kosong
+    if (kegiatan.length === 0) {
+      console.log(`⚠️ Mahasiswa ${id} tidak punya kegiatan disetujui`);
+    }
+
+    // 3️⃣ Format data untuk FE
     const formatData = kegiatan.map((item) => ({
       id: item.id,
-
       kode: item.masterPoin?.kode_keg || "",
 
-      nama_kegiatan:
-        item.masterPoin?.nama_kegiatan ||
-        item.masterPoin?.jenis_kegiatan ||
-        item.rincian_acara ||
-        "-",
+      // Tetap ada namaKegiatan untuk FE lama
+      namaKegiatan: item.masterPoin?.nama_kegiatan || "-",
 
-      // 🔥 INI YANG KEMARIN HILANG
+      // 🔑 Tambah field baru rincianAcara
+      rincianAcara: item.rincian_acara || item.masterPoin?.nama_kegiatan || "-", // fallback ke nama_kegiatan jika rincian kosong
+
       posisi: item.masterPoin?.posisi || "-",
       jenis: item.masterPoin?.jenis_kegiatan || "-",
       tingkat: item.tingkat || "-",
@@ -537,9 +540,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
       poin: Number(item.poin) || 0,
     }));
 
-    // =========================
-    // 🔥 KATEGORISASI
-    // =========================
+    // 4️⃣ Kategorisasi
     const ORGANISASI_PREFIX = [
       "BEM",
       "UKM",
@@ -550,17 +551,17 @@ export const getMahasiswaKegiatan = async (req, res) => {
       "PNL",
       "MNT",
     ];
-
     const PRESTASI_PREFIX = ["MDB"];
 
     const organisasi = formatData.filter((item) =>
-      ORGANISASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
+      ORGANISASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p)),
     );
 
     const prestasi = formatData.filter((item) =>
-      PRESTASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
+      PRESTASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p)),
     );
 
+    // 5️⃣ Response
     return res.json({
       message: "OK",
       data: formatData,
@@ -574,6 +575,7 @@ export const getMahasiswaKegiatan = async (req, res) => {
     });
   }
 };
+
 
 export const importMahasiswaExcel = async (req, res) => {
   console.log("\n================= [IMPORT MAHASISWA EXCEL] =================");
