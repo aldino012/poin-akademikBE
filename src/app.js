@@ -1,3 +1,4 @@
+// app.js
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -35,25 +36,20 @@ const vercelPreviewRegex =
 app.use(
   cors({
     origin: (origin, callback) => {
-      // allow server-to-server / curl
       if (!origin) return callback(null, true);
 
-      if (origin === FRONTEND_PROD) {
-        return callback(null, origin);
-      }
+      if (origin === FRONTEND_PROD) return callback(null, origin);
 
-      if (vercelPreviewRegex.test(origin)) {
-        return callback(null, origin);
-      }
+      if (vercelPreviewRegex.test(origin)) return callback(null, origin);
 
       console.warn("❌ CORS blocked origin:", origin);
-      return callback(null, false); // ⬅️ PENTING (JANGAN THROW ERROR)
+      return callback(null, false);
     },
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    optionsSuccessStatus: 204, // 🔥 penting untuk mobile & safari
-  })
+    optionsSuccessStatus: 204,
+  }),
 );
 
 // =================================================
@@ -94,7 +90,6 @@ app.use("/api/klaim", klaimKegiatanRoutes);
 // =================================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
 // =================================================
@@ -108,18 +103,17 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
     await sequelize.sync({ alter: false, force: false });
     console.log("✅ Database synced");
 
-    const adminExist = await User.findOne({
-      where: { role: "admin" },
-    });
+    // =================================================
+    // CREATE DEFAULT ADMIN JIKA BELUM ADA
+    // =================================================
+    const adminExist = await User.findOne({ where: { role: "admin" } });
 
     if (!adminExist) {
-      const hashed = await bcrypt.hash(
-        process.env.ADMIN_PASSWORD || "nantidulumas",
-        10,
-      );
+      const adminPassword = process.env.ADMIN_PASSWORD || "nantidulumas";
+      const hashed = await bcrypt.hash(adminPassword, 10);
 
       await User.create({
-        nip: " 0718128501",
+        nip: "0718128501", // ⬅️ pastikan tidak ada spasi
         nama: "Admin Kemahasiswaan",
         email: "kemahasiswaan@kampus.ac.id",
         password: hashed,
@@ -129,6 +123,9 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
       console.log("✅ Admin default dibuat");
     }
 
+    // =================================================
+    // START SERVER
+    // =================================================
     app.listen(PORT, () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
