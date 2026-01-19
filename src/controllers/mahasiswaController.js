@@ -135,7 +135,9 @@ export const getMahasiswaCV = async (req, res) => {
     // =========================
     const mhs = await Mahasiswa.findByPk(id);
     if (!mhs) {
-      return res.status(404).json({ message: "Mahasiswa not found" });
+      return res.status(404).json({
+        message: "Mahasiswa tidak ditemukan",
+      });
     }
 
     // =========================
@@ -144,7 +146,7 @@ export const getMahasiswaCV = async (req, res) => {
     const kegiatan = await KlaimKegiatan.findAll({
       where: {
         mahasiswa_id: id,
-        status: "Disetujui", // ✅ FIX
+        status: "Disetujui",
       },
       include: [
         {
@@ -156,17 +158,24 @@ export const getMahasiswaCV = async (req, res) => {
     });
 
     // =========================
-    // FORMAT DATA KEGIATAN
+    // FORMAT DATA KEGIATAN (KUNCI UTAMA)
     // =========================
     const formatData = kegiatan.map((item) => ({
       id: item.id,
+
+      // 🔑 KODE UNTUK KATEGORISASI
       kode: item.masterPoin?.kode_keg || "",
+
+      // 🔑 NAMA MASTER (STABIL, UNTUK BADGE / KATEGORI)
       namaKegiatan:
         item.masterPoin?.nama_kegiatan ||
         item.masterPoin?.jenis_kegiatan ||
-        item.rincian_acara ||
         "-",
-      jenis: item.masterPoin?.jenis_kegiatan || "",
+
+      // 🔥 JUDUL ASLI KEGIATAN (INI YANG DITAMPILKAN)
+      rincianAcara: item.rincian_acara || "-",
+
+      jenis: item.masterPoin?.jenis_kegiatan || "-",
       posisi: item.masterPoin?.posisi || "-",
       tingkat: item.tingkat || "-",
       tanggal: item.tanggal_pelaksanaan,
@@ -186,14 +195,15 @@ export const getMahasiswaCV = async (req, res) => {
       "PNL",
       "MNT",
     ];
+
     const PRESTASI_PREFIX = ["MDB"];
 
     const organisasi = formatData.filter((item) =>
-      ORGANISASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
+      ORGANISASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p)),
     );
 
     const prestasi = formatData.filter((item) =>
-      PRESTASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p))
+      PRESTASI_PREFIX.some((p) => item.kode.toUpperCase().startsWith(p)),
     );
 
     // =========================
@@ -210,7 +220,7 @@ export const getMahasiswaCV = async (req, res) => {
     };
 
     // =========================
-    // BIODATA (INI KUNCI UTAMA)
+    // BIODATA CV (FIX & SIAP CETAK)
     // =========================
     const biodata = {
       id_mhs: mhs.id_mhs,
@@ -223,13 +233,16 @@ export const getMahasiswaCV = async (req, res) => {
       angkatan: mhs.angkatan,
       jenis_kelamin: mhs.jenis_kelamin,
 
-      // 🔥 WAJIB ADA UNTUK FOTO CV
+      // 🔥 FOTO CV
       foto_file_id: mhs.foto_file_id || null,
 
       // TTL siap pakai
       ttl: `${mhs.tempat_lahir || "-"}, ${formatTanggalIndo(mhs.tgl_lahir)}`,
     };
 
+    // =========================
+    // RESPONSE FINAL
+    // =========================
     return res.json({
       message: "OK",
       biodata,
@@ -238,10 +251,11 @@ export const getMahasiswaCV = async (req, res) => {
     });
   } catch (err) {
     console.error("❌ getMahasiswaCV error:", err);
-    res.status(500).json({ message: "Gagal mengambil data CV" });
+    return res.status(500).json({
+      message: "Gagal mengambil data CV mahasiswa",
+    });
   }
 };
-
 
 // ======================================================
 // ✅ CREATE MAHASISWA + USER OTOMATIS (VERSI RINGKAS)
