@@ -174,7 +174,6 @@ export const getAllKlaim = async (req, res) => {
     const role = req.user.role;
     const whereCondition = {};
 
-    // 🔒 Batasi akses mahasiswa
     if (role === "mahasiswa") {
       if (!req.user.mahasiswa_id) {
         return res.status(403).json({
@@ -185,7 +184,6 @@ export const getAllKlaim = async (req, res) => {
       whereCondition.mahasiswa_id = req.user.mahasiswa_id;
     }
 
-    // 🔒 Batasi akses selain admin/mahasiswa
     if (role !== "admin" && role !== "mahasiswa") {
       return res.status(403).json({
         success: false,
@@ -193,7 +191,6 @@ export const getAllKlaim = async (req, res) => {
       });
     }
 
-    // 🔹 Ambil data klaim lengkap dengan relasi
     const data = await KlaimKegiatan.findAll({
       where: whereCondition,
       include: [
@@ -216,7 +213,7 @@ export const getAllKlaim = async (req, res) => {
           attributes: ["id_poin", "kode_keg", "jenis_kegiatan", "bobot_poin"],
         },
       ],
-      order: [["createdAt", "DESC"]], // 🔹 pastikan data terbaru muncul di atas
+      order: [["id", "DESC"]],
     });
 
     return res.json({
