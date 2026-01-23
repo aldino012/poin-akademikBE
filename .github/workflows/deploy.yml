@@ -36,7 +36,8 @@ jobs:
             npm install --omit=dev
 
             echo "🔄 Restart Node App"
-            passenger-config restart-app /home/poinmhss/repositories/poin-akademikBE || true
+            mkdir -p tmp
+            touch tmp/restart.txt
 
             echo "✅ Deploy finished"
           EOF
