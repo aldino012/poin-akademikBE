@@ -1,4 +1,7 @@
-// app.js
+// ================================
+// src/app.js
+// ================================
+
 import express from "express";
 import dotenv from "dotenv";
 import cors from "cors";
@@ -10,25 +13,28 @@ import cookieParser from "cookie-parser";
 import path from "path";
 import { fileURLToPath } from "url";
 
-// Routes
+// ================================
+// ROUTES
+// ================================
 import mahasiswaRoutes from "./routes/mahasiswaRoutes.js";
 import masterPoinRoutes from "./routes/masterpoinRoutes.js";
 import klaimKegiatanRoutes from "./routes/klaimKegiatanRoutes.js";
 import authRoutes from "./routes/authRoutes.js";
 
+// ================================
+// INIT
+// ================================
 dotenv.config();
-
 const app = express();
-const PORT = Number(process.env.PORT) || 5050;
 
-// =================================================
-// TRUST PROXY (WAJIB UNTUK RAILWAY + COOKIE SECURE)
-// =================================================
+// ================================
+// TRUST PROXY (WAJIB DI CPANEL)
+// ================================
 app.set("trust proxy", 1);
 
-// =================================================
-// CORS (FINAL – NO THROW ERROR)
-// =================================================
+// ================================
+// CORS (AMAN UNTUK VERCEL)
+// ================================
 const FRONTEND_PROD = "https://poin-akademik-fe.vercel.app";
 const vercelPreviewRegex =
   /^https:\/\/poin-akademik-[a-z0-9-]+-aldinos-projects-ea7e2f5e\.vercel\.app$/;
@@ -37,10 +43,8 @@ app.use(
   cors({
     origin: (origin, callback) => {
       if (!origin) return callback(null, true);
-
-      if (origin === FRONTEND_PROD) return callback(null, origin);
-
-      if (vercelPreviewRegex.test(origin)) return callback(null, origin);
+      if (origin === FRONTEND_PROD) return callback(null, true);
+      if (vercelPreviewRegex.test(origin)) return callback(null, true);
 
       console.warn("❌ CORS blocked origin:", origin);
       return callback(null, false);
@@ -52,18 +56,18 @@ app.use(
   }),
 );
 
-// =================================================
-// MIDDLEWARE UTAMA
-// =================================================
+// ================================
+// MIDDLEWARE
+// ================================
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// =================================================
-// TEST ROUTES
-// =================================================
+// ================================
+// TEST ROUTES (WAJIB ADA)
+// ================================
 app.get("/", (req, res) => {
-  res.json({
+  res.status(200).json({
     status: "OK",
     service: "poin-akademikBE",
     env: process.env.NODE_ENV,
@@ -71,30 +75,31 @@ app.get("/", (req, res) => {
 });
 
 app.get("/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     status: "healthy",
     time: new Date().toISOString(),
   });
 });
 
-// =================================================
+// ================================
 // API ROUTES
-// =================================================
+// ================================
 app.use("/api/auth", authRoutes);
 app.use("/api/mahasiswa", mahasiswaRoutes);
 app.use("/api/masterpoin", masterPoinRoutes);
 app.use("/api/klaim", klaimKegiatanRoutes);
 
-// =================================================
+// ================================
 // STATIC FILES
-// =================================================
+// ================================
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 
-// =================================================
-// DB INIT + SERVER START
-// =================================================
+// ================================
+// DB INIT + SERVER START (CPANEL FIX)
+// ================================
 (async () => {
   try {
     await sequelize.authenticate();
@@ -103,9 +108,9 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
     await sequelize.sync({ alter: false, force: false });
     console.log("✅ Database synced");
 
-    // =================================================
-    // CREATE DEFAULT ADMIN JIKA BELUM ADA
-    // =================================================
+    // ================================
+    // CREATE DEFAULT ADMIN
+    // ================================
     const adminExist = await User.findOne({ where: { role: "admin" } });
 
     if (!adminExist) {
@@ -113,7 +118,7 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
       const hashed = await bcrypt.hash(adminPassword, 10);
 
       await User.create({
-        nip: "0718128501", // ⬅️ pastikan tidak ada spasi
+        nip: "0718128501",
         nama: "Admin Kemahasiswaan",
         email: "kemahasiswaan@kampus.ac.id",
         password: hashed,
@@ -123,10 +128,12 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
       console.log("✅ Admin default dibuat");
     }
 
-    // =================================================
-    // START SERVER
-    // =================================================
-    app.listen(PORT, () => {
+    // ================================
+    // START SERVER (INI KUNCI CPANEL)
+    // ================================
+    const PORT = process.env.PORT;
+
+    app.listen(PORT, "0.0.0.0", () => {
       console.log(`🚀 Server running on port ${PORT}`);
     });
   } catch (err) {
