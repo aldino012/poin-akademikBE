@@ -29,8 +29,10 @@ jobs:
             echo "📥 Pull latest code"
             git pull origin main
 
+            echo "🔧 Load Node.js cPanel env"
+            export PATH=/home/poinmhss/nodevenv/repositories/poin-akademikBE/20/bin:$PATH
+
             echo "📦 Install dependencies"
-            source ~/.bashrc
             npm install --omit=dev
 
             echo "🔄 Restart Node App"
