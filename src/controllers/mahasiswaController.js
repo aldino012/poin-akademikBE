@@ -9,6 +9,7 @@ import XLSX from "xlsx";
 import bcrypt from "bcryptjs";
 import fs from "fs";
 import path from "path";
+import moment from "moment";
 import {
   normalizeMahasiswaRow,
   normalizeExportRow,
@@ -344,6 +345,8 @@ export const createMahasiswa = async (req, res) => {
 // ======================================================
 // ✅ UPDATE MAHASISWA
 // ======================================================
+
+
 export const updateMahasiswa = async (req, res) => {
   try {
     // ===============================
@@ -370,6 +373,7 @@ export const updateMahasiswa = async (req, res) => {
       "email",
       "jenis_kelamin",
       "tempat_lahir",
+      "tgl_lahir", // ✅ FIX UTAMA
       "thn_lulus",
       "target_poin",
       "total_poin",
@@ -379,6 +383,29 @@ export const updateMahasiswa = async (req, res) => {
     for (const key of allowedFields) {
       if (req.body[key] !== undefined) {
         updates[key] = req.body[key];
+      }
+    }
+
+    // ===============================
+    // NORMALISASI TANGGAL LAHIR (AMAN)
+    // ===============================
+    if (updates.tgl_lahir) {
+      // Jika sudah ISO (YYYY-MM-DD) → langsung pakai
+      if (moment(updates.tgl_lahir, "YYYY-MM-DD", true).isValid()) {
+        updates.tgl_lahir = moment(updates.tgl_lahir).format("YYYY-MM-DD");
+      }
+      // Jika DD-MM-YYYY → konversi
+      else if (moment(updates.tgl_lahir, "DD-MM-YYYY", true).isValid()) {
+        updates.tgl_lahir = moment(updates.tgl_lahir, "DD-MM-YYYY").format(
+          "YYYY-MM-DD",
+        );
+      } else {
+        return res.status(400).json({
+          message: "Format tanggal lahir tidak valid",
+          errors: {
+            tgl_lahir: "Gunakan format YYYY-MM-DD atau DD-MM-YYYY",
+          },
+        });
       }
     }
 
@@ -401,24 +428,20 @@ export const updateMahasiswa = async (req, res) => {
     }
 
     // ===============================
-    // 🔥 UPDATE FOTO (REPLACE / UPLOAD BARU)
+    // UPDATE FOTO (OPSIONAL)
     // ===============================
     if (req.file && req.file.buffer) {
       const tempFile = bufferToTempFile(req.file.buffer, req.file.originalname);
 
       if (data.foto_file_id) {
-        // GANTI ISI FILE (ID TETAP)
         await updateFile(data.foto_file_id, tempFile, req.file.mimetype);
-
         updates.foto_file_id = data.foto_file_id;
       } else {
-        // UPLOAD BARU
         const uploaded = await uploadToDrive(
           tempFile,
           req.file.mimetype,
-          DRIVE_FOLDER_IMAGES
+          DRIVE_FOLDER_IMAGES,
         );
-
         updates.foto_file_id = uploaded.id;
       }
 
